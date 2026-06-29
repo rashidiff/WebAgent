@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browser AI Agent</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+
+  <!-- Header Section -->
+  <header>
+    <div class="brand">
+      <div id="status-dot" class="status-indicator"></div>
+      <div class="brand-details">
+        <h1>Antigravity Agent</h1>
+        <p id="ws-status" class="connecting">Connecting...</p>
+      </div>
+    </div>
+    
+    <div class="header-controls">
+      <button id="btn-reset" class="icon-btn" title="Reset Session">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" style="width: 15px; height: 15px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+        </svg>
+      </button>
+      <button id="btn-stop" class="icon-btn stop" title="Stop Agent">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" style="width: 15px; height: 15px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Live Agent Logs Console -->
+  <div class="console-bar">
+    <span class="console-label">Status</span>
+    <span id="log-text" class="console-text">Idle. Waiting for user prompt...</span>
+  </div>
+
+  <!-- Messages History -->
+  <div id="messages-container" class="messages-pane">
+    <div class="message-wrapper assistant">
+      <div class="avatar">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 16px; height: 16px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
+        </svg>
+      </div>
+      <div class="bubble">
+        Hi! I am your browser assistant. I can browse the active tab, click elements, fill inputs, and execute actions to help you accomplish tasks. 
+        <br><br>
+        Enter a request below to get started!
+      </div>
+    </div>
+  </div>
+
+  <!-- Input Area Container -->
+  <div class="input-area">
+    <div class="input-box">
+      <textarea id="prompt-input" rows="2" placeholder="Ask the agent to do something on this page..." required></textarea>
+      <button id="btn-send" class="send-btn" type="button">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+        </svg>
+      </button>
+    </div>
+    <p class="footer-text">Runs locally using FastAPI & LangChain.</p>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Web Browser AI Agent",
+  "version": "1.0.0",
+  "description": "A local Web Browser AI Agent that acts on the active webpage.",
+  "permissions": [
+    "activeTab",
+    "sidePanel",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open Browser Agent Sidepanel"
+  }
+}
