@@ -1,15 +1,18 @@
 // content.js - Injected Webpage Content Script
 
 // Function to traverse DOM and extract interactive elements in a clean JSON format
+const MAX_INTERACTIVE_ELEMENTS = 200;
+
 function getInteractiveDOM() {
   const interactiveTags = ['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA'];
   const interactiveRoles = ['button', 'link', 'checkbox', 'tab', 'menuitem', 'option', 'combobox'];
-  
+
   const allElements = document.querySelectorAll('*');
   const interactiveList = [];
   let agentIdCounter = 1;
-  
-  allElements.forEach((el) => {
+
+  for (const el of allElements) {
+    if (interactiveList.length >= MAX_INTERACTIVE_ELEMENTS) break;
     const tagName = el.tagName;
     const role = el.getAttribute('role');
     const hasOnClick = el.hasAttribute('onclick') || typeof el.onclick === 'function';
@@ -58,8 +61,9 @@ function getInteractiveDOM() {
         agentIdCounter++;
       }
     }
-  });
-  
+  }
+
+
   return interactiveList;
 }
 

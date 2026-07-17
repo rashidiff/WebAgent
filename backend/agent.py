@@ -135,11 +135,16 @@ class SessionCoordinator:
             await self.history.log_action(action, selector, value, status="timeout")
             return f"Error: Browser timed out waiting for action response. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
 
+    MAX_DOM_ELEMENTS = 150
+
     def format_dom_for_llm(self, dom: List[Dict[str, Any]]) -> str:
         """Formats the list of interactive DOM elements as a clean, structured text representation."""
         if not dom:
             return "[Empty page or no interactive elements found]"
-            
+
+        truncated = len(dom) > self.MAX_DOM_ELEMENTS
+        dom = dom[:self.MAX_DOM_ELEMENTS]
+
         lines = []
         for el in dom:
             parts = [f"ID: {el.get('id')}", f"<{el.get('tagName')}>"]
@@ -156,7 +161,10 @@ class SessionCoordinator:
                 
             parts.append(f"selector: {el.get('selector')}")
             lines.append(" | ".join(parts))
-            
+
+        if truncated:
+            lines.append(f"[... truncated to first {self.MAX_DOM_ELEMENTS} elements; scroll to reveal more ...]")
+
         return "\n".join(lines)
 
 
