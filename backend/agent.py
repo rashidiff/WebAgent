@@ -99,6 +99,14 @@ class SessionCoordinator:
         self.is_running = True
         self.agent_task = None
         self.history = HistoryStore()
+        self.turn_summaries: List[str] = []
+
+    def record_turn(self, user_prompt: str, outcome: str) -> None:
+        """Remembers a short summary of a completed task so follow-up prompts in the
+        same session have continuity, without re-feeding full DOM/tool history."""
+        summary = f'- Task: "{user_prompt[:150]}" -> {outcome[:200]}'
+        self.turn_summaries.append(summary)
+        self.turn_summaries = self.turn_summaries[-5:]
 
     async def send_status(self, message: str):
         """Sends real-time status update to the Chrome Extension sidepanel."""
@@ -228,7 +236,7 @@ INSTRUCTIONS:
   "SUCCESS: [description of what was accomplished and final page state]"
 - If you run into blocker constraints (e.g. CAPTCHA, payment gates, missing login details, server errors), stop calling tools and respond with:
   "ERROR: [detailed reason why the task failed]"
-
+{previous_tasks}
 Current User Goal: {user_prompt}
 """
 
@@ -244,8 +252,15 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
         
         # Bind the tools to the LLM
         llm_with_tools = llm.bind_tools(tools)
-        
-        system_instructions = SYSTEM_PROMPT.format(user_prompt=user_prompt)
+
+        previous_tasks = ""
+        if coordinator.turn_summaries:
+            previous_tasks = (
+                "\nPREVIOUS TASKS COMPLETED IN THIS SESSION (for context only, do not repeat them):\n"
+                + "\n".join(coordinator.turn_summaries) + "\n"
+            )
+
+        system_instructions = SYSTEM_PROMPT.format(user_prompt=user_prompt, previous_tasks=previous_tasks)
         
         # Seed message history
         messages = [
@@ -303,22 +318,27 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                     output = f"FINISHED: {output}"
 
                 await coordinator.history.log_message("assistant", output)
+                coordinator.record_turn(user_prompt, output)
                 await coordinator.send_status(output)
                 return
 
         if step >= max_steps:
             limit_msg = "ERROR: Reached maximum execution limit of 15 steps without completion."
             await coordinator.history.log_message("assistant", limit_msg)
+            coordinator.record_turn(user_prompt, limit_msg)
             await coordinator.send_status(limit_msg)
 
     except asyncio.CancelledError:
         print("Agent execution was cancelled.")
-        await coordinator.history.log_message("assistant", "ERROR: Agent execution stopped by user command.")
-        await coordinator.send_status("ERROR: Agent execution stopped by user command.")
+        cancel_msg = "ERROR: Agent execution stopped by user command."
+        await coordinator.history.log_message("assistant", cancel_msg)
+        coordinator.record_turn(user_prompt, cancel_msg)
+        await coordinator.send_status(cancel_msg)
     except Exception as e:
         error_msg = f"ERROR: Execution failed: {str(e)}"
         print(error_msg)
         await coordinator.history.log_message("assistant", error_msg)
+        coordinator.record_turn(user_prompt, error_msg)
         await coordinator.send_status(error_msg)
     finally:
         coordinator.is_running = False
