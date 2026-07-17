@@ -1,8 +1,6 @@
-# Local configuration files
+# Local configuration files (keep .env.example templates tracked)
 .env
-.env.example
 backend/.env
-backend/.env.example
 
 # Python virtual environments
 venv/
