@@ -21,11 +21,11 @@ def get_llm():
         if not api_key or "your_" in api_key:
             raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY is not configured in your .env file.")
             
-        from langchain_google_genai import ChatGoogleGenAI
+        from langchain_google_genai import ChatGoogleGenerativeAI
         if not model_name or "gemini" not in model_name:
             model_name = "gemini-1.5-flash"
-            
-        return ChatGoogleGenAI(
+
+        return ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=api_key,
             temperature=0.0
