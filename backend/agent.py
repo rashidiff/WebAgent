@@ -190,6 +190,20 @@ def create_agent_tools(coordinator: SessionCoordinator):
     return [click_element, input_text, scroll_page]
 
 
+def compact_old_tool_messages(messages: List[Any]) -> None:
+    """Keeps the full DOM dump only on the most recent ToolMessage; older ones are
+    collapsed to their first line so message history doesn't grow unbounded across steps."""
+    tool_indices = [i for i, m in enumerate(messages) if isinstance(m, ToolMessage)]
+    for i in tool_indices[:-1]:
+        content = messages[i].content
+        first_line = content.split("\n", 1)[0]
+        if len(content) > len(first_line):
+            messages[i] = ToolMessage(
+                content=f"{first_line} [older DOM snapshot omitted for brevity]",
+                tool_call_id=messages[i].tool_call_id
+            )
+
+
 SYSTEM_PROMPT = """You are a highly capable Browser AI Agent. Your goal is to help the user complete their tasks on the active browser tab.
 You will be provided with the user's prompt and a serialized structure of the webpage's interactive elements (DOM state).
 
@@ -242,7 +256,10 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
         while step < max_steps and coordinator.is_running:
             step += 1
             print(f"[Agent Loop] Step {step}...")
-            
+
+            # Keep only the latest DOM snapshot in full; older ones are collapsed
+            compact_old_tool_messages(messages)
+
             # Invoke LLM (fully async)
             response = await llm_with_tools.ainvoke(messages)
             messages.append(response)
