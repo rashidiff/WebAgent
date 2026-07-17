@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 
+from database import HistoryStore
+
 load_dotenv(override=True)
 
 # Factory function to obtain the configured Chat LLM
@@ -91,6 +93,7 @@ class SessionCoordinator:
         self.response_queue = asyncio.Queue()
         self.is_running = True
         self.agent_task = None
+        self.history = HistoryStore()
 
     async def send_status(self, message: str):
         """Sends real-time status update to the Chrome Extension sidepanel."""
@@ -122,11 +125,14 @@ class SessionCoordinator:
             response = await asyncio.wait_for(self.response_queue.get(), timeout=40.0)
             if response.get("status") == "success":
                 self.current_dom = response.get("dom_tree", [])
+                await self.history.log_action(action, selector, value, status="success")
                 return f"Success: Action executed. Current webpage interactive elements:\n{self.format_dom_for_llm(self.current_dom)}"
             else:
                 err = response.get("error", "Unknown client error")
+                await self.history.log_action(action, selector, value, status="error", detail=err)
                 return f"Error: Action failed: {err}. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
         except asyncio.TimeoutError:
+            await self.history.log_action(action, selector, value, status="timeout")
             return f"Error: Browser timed out waiting for action response. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
 
     def format_dom_for_llm(self, dom: List[Dict[str, Any]]) -> str:
@@ -202,6 +208,7 @@ Current User Goal: {user_prompt}
 async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, initial_dom: List[Dict[str, Any]]):
     try:
         coordinator.current_dom = initial_dom
+        await coordinator.history.log_message("user", user_prompt)
         llm = get_llm()
         tools = create_agent_tools(coordinator)
         
@@ -264,19 +271,24 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                 
                 if not (output.startswith("SUCCESS:") or output.startswith("ERROR:") or output.startswith("FINISHED:")):
                     output = f"FINISHED: {output}"
-                    
+
+                await coordinator.history.log_message("assistant", output)
                 await coordinator.send_status(output)
                 return
-                
+
         if step >= max_steps:
-            await coordinator.send_status("ERROR: Reached maximum execution limit of 15 steps without completion.")
-            
+            limit_msg = "ERROR: Reached maximum execution limit of 15 steps without completion."
+            await coordinator.history.log_message("assistant", limit_msg)
+            await coordinator.send_status(limit_msg)
+
     except asyncio.CancelledError:
         print("Agent execution was cancelled.")
+        await coordinator.history.log_message("assistant", "ERROR: Agent execution stopped by user command.")
         await coordinator.send_status("ERROR: Agent execution stopped by user command.")
     except Exception as e:
         error_msg = f"ERROR: Execution failed: {str(e)}"
         print(error_msg)
+        await coordinator.history.log_message("assistant", error_msg)
         await coordinator.send_status(error_msg)
     finally:
         coordinator.is_running = False

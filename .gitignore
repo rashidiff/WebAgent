@@ -2,6 +2,9 @@
 .env
 backend/.env
 
+# Local SQLite history database
+backend/agent_history.db
+
 # Python virtual environments
 venv/
 .venv/

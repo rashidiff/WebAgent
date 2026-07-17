@@ -1,10 +1,11 @@
 import os
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from agent import SessionCoordinator, run_browser_agent
+from database import init_db, list_sessions, get_session_history
 
 load_dotenv(override=True)
 
@@ -13,6 +14,11 @@ app = FastAPI(
     description="Local FastAPI WebSocket server directing the Web Browser AI Agent.",
     version="1.0.0"
 )
+
+
+@app.on_event("startup")
+async def on_startup():
+    init_db()
 
 # Configure CORS for local development and extension communication
 app.add_middleware(
@@ -29,7 +35,8 @@ async def websocket_endpoint(websocket: WebSocket):
     print("[WebSocket] Extension sidepanel connected.")
     
     coordinator = SessionCoordinator(websocket)
-    
+    await coordinator.history.start_session()
+
     try:
         while True:
             # Receive data packets from extension client
@@ -82,6 +89,23 @@ async def websocket_endpoint(websocket: WebSocket):
         if coordinator.agent_task and not coordinator.agent_task.done():
             coordinator.agent_task.cancel()
         coordinator.is_running = False
+        await coordinator.history.end_session()
+
+
+@app.get("/sessions")
+async def get_sessions():
+    """Lists all recorded agent sessions, most recent first."""
+    return list_sessions()
+
+
+@app.get("/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Returns the persisted messages and browser actions for a session."""
+    history = get_session_history(session_id)
+    if not history["messages"] and not history["actions"]:
+        raise HTTPException(status_code=404, detail="Session not found or has no recorded history.")
+    return history
+
 
 if __name__ == "__main__":
     import uvicorn
