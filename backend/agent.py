@@ -14,7 +14,8 @@ load_dotenv(override=True)
 def get_llm():
     provider = os.getenv("LLM_PROVIDER", "gemini").lower()
     model_name = os.getenv("LLM_MODEL_NAME")
-    
+    max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2048"))
+
     if provider == "gemini":
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key or "your_" in api_key:
@@ -30,7 +31,8 @@ def get_llm():
         return ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=api_key,
-            temperature=0.0
+            temperature=0.0,
+            max_output_tokens=max_tokens
         )
         
     elif provider == "openai":
@@ -45,9 +47,10 @@ def get_llm():
         return ChatOpenAI(
             model=model_name,
             openai_api_key=api_key,
-            temperature=0.0
+            temperature=0.0,
+            max_tokens=max_tokens
         )
-        
+
     elif provider == "anthropic":
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key or "your_" in api_key:
@@ -60,7 +63,8 @@ def get_llm():
             return ChatAnthropic(
                 model=model_name,
                 anthropic_api_key=api_key,
-                temperature=0.0
+                temperature=0.0,
+                max_tokens=max_tokens
             )
         except ImportError:
             raise ImportError("langchain-anthropic package is not installed. Please run: pip install langchain-anthropic")
@@ -78,7 +82,8 @@ def get_llm():
             model=model_name,
             openai_api_key=api_key,
             openai_api_base="https://api.deepseek.com",
-            temperature=0.0
+            temperature=0.0,
+            max_tokens=max_tokens
         )
         
     else:
