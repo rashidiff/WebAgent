@@ -104,13 +104,13 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/sessions")
 async def get_sessions():
     """Lists all recorded agent sessions, most recent first."""
-    return list_sessions()
+    return await asyncio.to_thread(list_sessions)
 
 
 @app.get("/sessions/{session_id}")
 async def get_session(session_id: str):
     """Returns the persisted messages and browser actions for a session."""
-    history = get_session_history(session_id)
+    history = await asyncio.to_thread(get_session_history, session_id)
     if not history["messages"] and not history["actions"]:
         raise HTTPException(status_code=404, detail="Session not found or has no recorded history.")
     return history
