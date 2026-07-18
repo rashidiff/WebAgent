@@ -20,14 +20,19 @@ app = FastAPI(
 async def on_startup():
     init_db()
 
-# Configure CORS for local development and extension communication
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS is only relevant to the plain HTTP endpoints (GET /sessions*); the extension talks to
+# this server exclusively over WebSocket, which CORS does not gate. Default to allowing no
+# cross-origin browser access at all, since /sessions exposes locally logged chat/action
+# history and a wildcard origin would let any open webpage's JS read it via fetch().
+_cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=False,
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
