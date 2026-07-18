@@ -51,9 +51,13 @@ async def websocket_endpoint(websocket: WebSocket):
             print(f"[WebSocket] Event received: '{event_type}'")
             
             if event_type == "user_input":
-                prompt = data.get("prompt")
+                prompt = (data.get("prompt") or "").strip()
                 dom_tree = data.get("dom_tree", [])
-                
+
+                if not prompt:
+                    await coordinator.send_status("ERROR: Prompt cannot be empty.")
+                    continue
+
                 # Cancel any previous task still executing
                 if coordinator.agent_task and not coordinator.agent_task.done():
                     coordinator.agent_task.cancel()
