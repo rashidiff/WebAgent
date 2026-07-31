@@ -250,7 +250,8 @@ async function executeAgentAction(tab, data) {
     type: 'execute_action',
     action: data.action,
     selector: data.selector,
-    value: data.value
+    value: data.value,
+    expected_fingerprint: data.expected_fingerprint || ""
   });
 }
 

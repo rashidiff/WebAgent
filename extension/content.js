@@ -78,6 +78,19 @@ function queryAllElements(root = document) {
   return elements;
 }
 
+function findElement(selector) {
+  const direct = document.querySelector(selector);
+  if (direct) return direct;
+
+  for (const el of queryAllElements()) {
+    if (el.shadowRoot) {
+      const shadowMatch = el.shadowRoot.querySelector(selector);
+      if (shadowMatch) return shadowMatch;
+    }
+  }
+  return null;
+}
+
 function getInteractiveDOM() {
   const interactiveTags = ["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA", "SUMMARY"];
   const interactiveRoles = ["button", "link", "checkbox", "tab", "menuitem", "option", "combobox", "textbox", "radio", "switch"];
@@ -187,7 +200,7 @@ function dispatchKey(key) {
   target.dispatchEvent(new KeyboardEvent("keyup", eventInit));
 }
 
-function executePageAction(action, selector, value) {
+function executePageAction(action, selector, value, expectedFingerprint) {
   if (action === "scroll") {
     if (value === "down") window.scrollBy({ top: window.innerHeight * 0.7, behavior: "smooth" });
     else if (value === "up") window.scrollBy({ top: -window.innerHeight * 0.7, behavior: "smooth" });
@@ -230,9 +243,13 @@ function executePageAction(action, selector, value) {
     return;
   }
 
-  const element = document.querySelector(selector);
+  const element = findElement(selector);
   if (!element) {
     throw new Error(`Element not found with selector: ${selector}`);
+  }
+
+  if (expectedFingerprint && getElementFingerprint(element) !== expectedFingerprint) {
+    throw new Error(`Element fingerprint changed before action: ${selector}`);
   }
 
   if (element.disabled || element.getAttribute("aria-disabled") === "true") {
@@ -289,9 +306,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ status: "error", error: e.message });
     }
   } else if (request.type === 'execute_action') {
-    const { action, selector, value } = request;
+    const { action, selector, value, expected_fingerprint: expectedFingerprint } = request;
     try {
-      executePageAction(action, selector, value);
+      executePageAction(action, selector, value, expectedFingerprint);
       
       setTimeout(() => {
         try {

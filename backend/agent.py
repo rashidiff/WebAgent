@@ -113,6 +113,7 @@ class SessionCoordinator:
         self.turn_summaries: List[str] = []
         self.last_page_text: Dict[str, Any] = {}
         self.successful_actions: List[str] = []
+        self.current_goal = ""
 
     def record_turn(self, user_prompt: str, outcome: str) -> None:
         """Remembers a short summary of a completed task so follow-up prompts in the
@@ -141,6 +142,7 @@ class SessionCoordinator:
             self.response_queue.get_nowait()
             
         approval_reason = self.get_approval_reason(action, selector, value)
+        expected_fingerprint = self.get_expected_fingerprint(selector)
 
         # Send action to extension via WebSocket
         await self.websocket.send_json({
@@ -148,6 +150,7 @@ class SessionCoordinator:
             "action": action,
             "selector": selector,
             "value": value,
+            "expected_fingerprint": expected_fingerprint,
             "requires_approval": bool(approval_reason),
             "approval_reason": approval_reason
         })
@@ -198,6 +201,12 @@ class SessionCoordinator:
 
         return ""
 
+    def get_expected_fingerprint(self, selector: str = None) -> str:
+        if not selector:
+            return ""
+        element = next((el for el in self.current_dom if el.get("selector") == selector), {})
+        return element.get("fingerprint") or ""
+
     MAX_DOM_ELEMENTS = DEFAULT_MAX_DOM_ELEMENTS
 
     def format_page_text_for_llm(self, page_text: Dict[str, Any]) -> str:
@@ -213,8 +222,9 @@ class SessionCoordinator:
         if not dom:
             return "[Empty page or no interactive elements found]"
 
-        truncated = len(dom) > self.MAX_DOM_ELEMENTS
-        dom = dom[:self.MAX_DOM_ELEMENTS]
+        ranked_dom = self.rank_dom_for_goal(dom)
+        truncated = len(ranked_dom) > self.MAX_DOM_ELEMENTS
+        dom = ranked_dom[:self.MAX_DOM_ELEMENTS]
 
         lines = []
         for el in dom:
@@ -261,6 +271,24 @@ class SessionCoordinator:
             lines.append(f"[... truncated to first {self.MAX_DOM_ELEMENTS} elements; scroll to reveal more ...]")
 
         return "\n".join(lines)
+
+    def rank_dom_for_goal(self, dom: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        goal_terms = {
+            term.lower()
+            for term in self.current_goal.replace('"', " ").replace("'", " ").split()
+            if len(term) > 2
+        }
+        if not goal_terms:
+            return dom
+
+        def score(el: Dict[str, Any]) -> int:
+            haystack = " ".join(
+                str(el.get(key) or "")
+                for key in ["text", "label", "ariaLabel", "title", "name", "placeholder", "href", "role"]
+            ).lower()
+            return sum(1 for term in goal_terms if term in haystack)
+
+        return [el for _, el in sorted(enumerate(dom), key=lambda item: (-score(item[1]), item[0]))]
 
 
 # Helper to instantiate tools bound to a specific session coordinator
@@ -399,6 +427,7 @@ Current User Goal: {user_prompt}
 
 async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, initial_dom: List[Dict[str, Any]]):
     try:
+        coordinator.current_goal = user_prompt
         coordinator.current_dom = initial_dom
         await coordinator.history.log_message("user", user_prompt)
         llm = get_llm()

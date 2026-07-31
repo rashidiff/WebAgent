@@ -44,6 +44,17 @@ class AgentCoreTests(unittest.TestCase):
 
         self.assertIn("Sensitive browser action", reason)
 
+    def test_rank_dom_prioritizes_goal_terms(self):
+        coordinator = SessionCoordinator(websocket=None)
+        coordinator.current_goal = "search account settings"
+
+        ranked = coordinator.rank_dom_for_goal([
+            {"text": "Home", "selector": "a"},
+            {"text": "Account settings", "selector": "b"},
+        ])
+
+        self.assertEqual(ranked[0]["selector"], "b")
+
     def test_tool_signature_is_stable_for_arg_order(self):
         first = tool_signature("click_element", {"selector": "a", "value": "b"})
         second = tool_signature("click_element", {"value": "b", "selector": "a"})
