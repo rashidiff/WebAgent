@@ -1,0 +1,10 @@
+fastapi<1.0.0
+uvicorn<1.0.0
+websockets<16.0.0
+langchain<2.0.0
+langchain-core<2.0.0
+langchain-google-genai<4.0.0
+langchain-openai<2.0.0
+langchain-anthropic<2.0.0
+python-dotenv<2.0.0
+pydantic<3.0.0

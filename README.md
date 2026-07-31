@@ -60,7 +60,7 @@ browser-agent/
 
 3. **Install dependencies**:
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements.txt -c constraints.txt
    ```
 
 4. **Configure your API keys**:
