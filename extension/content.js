@@ -1,4 +1,6 @@
 // content.js - Injected Webpage Content Script
+if (!globalThis.__webAgentContentScriptLoaded) {
+globalThis.__webAgentContentScriptLoaded = true;
 
 const MAX_INTERACTIVE_ELEMENTS = 200;
 const PAGE_SETTLE_DELAY_MS = 700;
@@ -306,3 +308,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   return true; // Retain message channel open for asynchronous sendResponse
 });
+}
