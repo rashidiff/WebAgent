@@ -11,6 +11,10 @@ const btnStop = document.getElementById('btn-stop');
 const messagesContainer = document.getElementById('messages-container');
 const promptInput = document.getElementById('prompt-input');
 const btnSend = document.getElementById('btn-send');
+const approvalPanel = document.getElementById('approval-panel');
+const approvalText = document.getElementById('approval-text');
+const btnApprove = document.getElementById('btn-approve');
+const btnReject = document.getElementById('btn-reject');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
 
@@ -56,6 +60,15 @@ function connectWS() {
         }
       } else if (data.type === 'agent_action') {
         updateLog(`Agent Action: ${data.action} on ${data.selector || 'page'}`);
+
+        if (data.requires_approval) {
+          const approved = await requestActionApproval(data);
+          if (!approved) {
+            sendResult({ status: "error", error: `User rejected action: ${data.approval_reason || data.action}` });
+            updateLog("Action rejected by user.");
+            return;
+          }
+        }
         
         const tab = await getActiveTab();
         if (!tab) {
@@ -90,6 +103,30 @@ function connectWS() {
       console.error("Error processing WebSocket packet:", err);
     }
   };
+}
+
+function requestActionApproval(data) {
+  approvalText.textContent = `${data.approval_reason || "Sensitive action"} (${data.action}${data.selector ? `: ${data.selector}` : ""})`;
+  approvalPanel.classList.remove("hidden");
+  updateLog("Waiting for user approval...");
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      btnApprove.removeEventListener("click", onApprove);
+      btnReject.removeEventListener("click", onReject);
+      approvalPanel.classList.add("hidden");
+    };
+    const onApprove = () => {
+      cleanup();
+      resolve(true);
+    };
+    const onReject = () => {
+      cleanup();
+      resolve(false);
+    };
+    btnApprove.addEventListener("click", onApprove);
+    btnReject.addEventListener("click", onReject);
+  });
 }
 
 async function executeAgentAction(tab, data) {
@@ -349,6 +386,7 @@ async function startSession() {
 // Reset UI/Session State to default
 function stopSessionState() {
   isAgentRunning = false;
+  approvalPanel.classList.add("hidden");
   promptInput.disabled = false;
   btnSend.disabled = false;
   promptInput.focus();

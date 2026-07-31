@@ -38,6 +38,17 @@
     <span id="log-text" class="console-text">Idle. Waiting for user prompt...</span>
   </div>
 
+  <div id="approval-panel" class="approval-panel hidden">
+    <div>
+      <strong>Approval required</strong>
+      <p id="approval-text">Review the pending browser action.</p>
+    </div>
+    <div class="approval-actions">
+      <button id="btn-approve" type="button">Approve</button>
+      <button id="btn-reject" type="button">Reject</button>
+    </div>
+  </div>
+
   <!-- Messages History -->
   <div id="messages-container" class="messages-pane">
     <div class="message-wrapper assistant">

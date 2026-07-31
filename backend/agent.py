@@ -13,6 +13,11 @@ load_dotenv(override=True)
 DEFAULT_ACTION_TIMEOUT_SECONDS = float(os.getenv("ACTION_TIMEOUT_SECONDS", "40"))
 DEFAULT_MAX_DOM_ELEMENTS = int(os.getenv("MAX_DOM_ELEMENTS", "150"))
 DEFAULT_MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "15"))
+REQUIRE_ACTION_APPROVAL = os.getenv("REQUIRE_ACTION_APPROVAL", "true").lower() not in {"0", "false", "no"}
+SENSITIVE_ACTION_KEYWORDS = [
+    "submit", "send", "buy", "purchase", "pay", "checkout", "order", "delete", "remove",
+    "confirm", "transfer", "withdraw", "sign", "agree", "accept", "place order", "book",
+]
 
 # Factory function to obtain the configured Chat LLM
 def get_llm():
@@ -130,12 +135,16 @@ class SessionCoordinator:
         while not self.response_queue.empty():
             self.response_queue.get_nowait()
             
+        approval_reason = self.get_approval_reason(action, selector, value)
+
         # Send action to extension via WebSocket
         await self.websocket.send_json({
             "type": "agent_action",
             "action": action,
             "selector": selector,
-            "value": value
+            "value": value,
+            "requires_approval": bool(approval_reason),
+            "approval_reason": approval_reason
         })
         
         # Await response from content script with timeout
@@ -157,6 +166,30 @@ class SessionCoordinator:
         except asyncio.TimeoutError:
             await self.history.log_action(action, selector, value, status="timeout")
             return f"Error: Browser timed out waiting for action response. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
+
+    def get_approval_reason(self, action: str, selector: str = None, value: str = None) -> str:
+        if not REQUIRE_ACTION_APPROVAL:
+            return ""
+
+        if action in {"navigate", "back", "forward", "reload", "scroll", "hover", "wait", "get_text", "key"}:
+            return ""
+
+        element = next((el for el in self.current_dom if el.get("selector") == selector), {})
+        element_text = " ".join(
+            str(element.get(key) or "")
+            for key in ["text", "label", "ariaLabel", "title", "name", "placeholder", "value", "href", "formAction"]
+        ).lower()
+        value_text = str(value or "").lower()
+        combined = f"{action} {element_text} {value_text}"
+
+        if any(keyword in combined for keyword in SENSITIVE_ACTION_KEYWORDS):
+            return f"Sensitive browser action requires approval: {action} on {selector or 'page'}"
+
+        input_type = str(element.get("type") or "").lower()
+        if action == "input" and input_type in {"password", "email", "tel", "number"}:
+            return f"Sensitive input field requires approval: {input_type}"
+
+        return ""
 
     MAX_DOM_ELEMENTS = DEFAULT_MAX_DOM_ELEMENTS
 
