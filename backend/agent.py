@@ -4,11 +4,15 @@ from typing import Dict, Any, List
 from dotenv import load_dotenv
 
 from langchain_core.tools import tool
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
 from database import HistoryStore
 
 load_dotenv(override=True)
+
+DEFAULT_ACTION_TIMEOUT_SECONDS = float(os.getenv("ACTION_TIMEOUT_SECONDS", "40"))
+DEFAULT_MAX_DOM_ELEMENTS = int(os.getenv("MAX_DOM_ELEMENTS", "150"))
+DEFAULT_MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "15"))
 
 # Factory function to obtain the configured Chat LLM
 def get_llm():
@@ -100,6 +104,7 @@ class SessionCoordinator:
         self.agent_task = None
         self.history = HistoryStore()
         self.turn_summaries: List[str] = []
+        self.last_page_text: Dict[str, Any] = {}
 
     def record_turn(self, user_prompt: str, outcome: str) -> None:
         """Remembers a short summary of a completed task so follow-up prompts in the
@@ -135,11 +140,16 @@ class SessionCoordinator:
         
         # Await response from content script with timeout
         try:
-            response = await asyncio.wait_for(self.response_queue.get(), timeout=40.0)
+            response = await asyncio.wait_for(self.response_queue.get(), timeout=DEFAULT_ACTION_TIMEOUT_SECONDS)
             if response.get("status") == "success":
                 self.current_dom = response.get("dom_tree", [])
+                if response.get("page_text"):
+                    self.last_page_text = response.get("page_text") or {}
                 await self.history.log_action(action, selector, value, status="success")
-                return f"Success: Action executed. Current webpage interactive elements:\n{self.format_dom_for_llm(self.current_dom)}"
+                result = f"Success: Action executed. Current webpage interactive elements:\n{self.format_dom_for_llm(self.current_dom)}"
+                if action == "get_text" and self.last_page_text:
+                    result += f"\n\nCurrent page text:\n{self.format_page_text_for_llm(self.last_page_text)}"
+                return result
             else:
                 err = response.get("error", "Unknown client error")
                 await self.history.log_action(action, selector, value, status="error", detail=err)
@@ -148,7 +158,15 @@ class SessionCoordinator:
             await self.history.log_action(action, selector, value, status="timeout")
             return f"Error: Browser timed out waiting for action response. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
 
-    MAX_DOM_ELEMENTS = 150
+    MAX_DOM_ELEMENTS = DEFAULT_MAX_DOM_ELEMENTS
+
+    def format_page_text_for_llm(self, page_text: Dict[str, Any]) -> str:
+        if not page_text:
+            return "[No page text captured]"
+        title = page_text.get("title") or ""
+        url = page_text.get("url") or ""
+        text = page_text.get("text") or ""
+        return f"Title: {title}\nURL: {url}\nText: {text[:6000]}"
 
     def format_dom_for_llm(self, dom: List[Dict[str, Any]]) -> str:
         """Formats the list of interactive DOM elements as a clean, structured text representation."""
@@ -165,12 +183,36 @@ class SessionCoordinator:
                 parts.append(f"text: \"{el.get('text')}\"")
             if el.get('placeholder'):
                 parts.append(f"placeholder: \"{el.get('placeholder')}\"")
+            if el.get('label'):
+                parts.append(f"label: \"{el.get('label')}\"")
+            if el.get('ariaLabel'):
+                parts.append(f"aria-label: \"{el.get('ariaLabel')}\"")
+            if el.get('title'):
+                parts.append(f"title: \"{el.get('title')}\"")
+            if el.get('name'):
+                parts.append(f"name: \"{el.get('name')}\"")
+            if el.get('role'):
+                parts.append(f"role: \"{el.get('role')}\"")
             if el.get('value'):
                 parts.append(f"value: \"{el.get('value')}\"")
             if el.get('type'):
                 parts.append(f"type: \"{el.get('type')}\"")
             if el.get('href'):
                 parts.append(f"href: \"{el.get('href')}\"")
+            if el.get('disabled'):
+                parts.append("disabled: true")
+            if el.get('checked'):
+                parts.append("checked: true")
+            if el.get('fingerprint'):
+                parts.append(f"fingerprint: {el.get('fingerprint')}")
+            if el.get('inViewport') is not None:
+                parts.append(f"inViewport: {el.get('inViewport')}")
+            if el.get('options'):
+                option_text = ", ".join(
+                    f"{opt.get('text') or opt.get('value')}={opt.get('value')}"
+                    for opt in el.get('options', [])[:10]
+                )
+                parts.append(f"options: [{option_text}]")
                 
             parts.append(f"selector: {el.get('selector')}")
             lines.append(" | ".join(parts))
@@ -200,7 +242,67 @@ def create_agent_tools(coordinator: SessionCoordinator):
             return "Error: Invalid scroll direction. Choose from 'down', 'up', 'top', 'bottom'."
         return await coordinator.execute_action("scroll", value=direction)
 
-    return [click_element, input_text, scroll_page]
+    @tool
+    async def navigate_url(url: str) -> str:
+        """Navigates the active tab to an absolute http(s) URL."""
+        if not url.startswith(("http://", "https://")):
+            return "Error: URL must start with http:// or https://."
+        return await coordinator.execute_action("navigate", value=url)
+
+    @tool
+    async def press_key(key: str) -> str:
+        """Presses a keyboard key in the active page, such as Enter, Escape, Tab, ArrowDown, or Backspace."""
+        return await coordinator.execute_action("key", value=key)
+
+    @tool
+    async def select_option(selector: str, value: str) -> str:
+        """Selects an option in a <select> element by option value using its CSS selector."""
+        return await coordinator.execute_action("select", selector=selector, value=value)
+
+    @tool
+    async def hover_element(selector: str) -> str:
+        """Moves the mouse hover state over an element using its CSS selector."""
+        return await coordinator.execute_action("hover", selector=selector)
+
+    @tool
+    async def go_back() -> str:
+        """Navigates the active tab one step back in browser history."""
+        return await coordinator.execute_action("back")
+
+    @tool
+    async def go_forward() -> str:
+        """Navigates the active tab one step forward in browser history."""
+        return await coordinator.execute_action("forward")
+
+    @tool
+    async def reload_page() -> str:
+        """Reloads the active page."""
+        return await coordinator.execute_action("reload")
+
+    @tool
+    async def get_page_text() -> str:
+        """Reads the visible page text when the DOM element list is not enough to answer or verify the task."""
+        return await coordinator.execute_action("get_text")
+
+    @tool
+    async def wait_for_page_change() -> str:
+        """Waits briefly for page transitions, API results, animations, or DOM updates to settle."""
+        return await coordinator.execute_action("wait")
+
+    return [
+        click_element,
+        input_text,
+        scroll_page,
+        navigate_url,
+        press_key,
+        select_option,
+        hover_element,
+        go_back,
+        go_forward,
+        reload_page,
+        get_page_text,
+        wait_for_page_change,
+    ]
 
 
 def compact_old_tool_messages(messages: List[Any]) -> None:
@@ -225,10 +327,18 @@ ID: <id> | <TAGNAME> | text: "<text>" | placeholder: "<placeholder>" | value: "<
 
 Your task is to analyze this list, decide on the best next action, and execute it using one of these tools:
 1. `click_element(selector)`: Clicks an element. Always use the selector string (e.g. `[data-agent-id="12"]`).
-2. `input_text(selector, text)`: Inputs text into a target text field or input.
+2. `input_text(selector, text)`: Inputs text into a target text field, textarea, or contenteditable element.
 3. `scroll_page(direction)`: Scrolls the browser viewport. Use this to discover more elements if needed.
+4. `navigate_url(url)`: Navigates to an absolute http(s) URL.
+5. `press_key(key)`: Presses a key such as Enter, Escape, Tab, ArrowDown, or Backspace.
+6. `select_option(selector, value)`: Chooses an option in a select element.
+7. `hover_element(selector)`: Hovers an element to reveal menus or tooltips.
+8. `go_back()`, `go_forward()`, `reload_page()`: Browser navigation controls.
+9. `get_page_text()`: Reads visible page text for comprehension or verification.
+10. `wait_for_page_change()`: Waits briefly for dynamic page updates.
 
 INSTRUCTIONS:
+- Think briefly before every tool call: state what you expect the action to change, then verify after the tool result.
 - You must carefully verify whether your action succeeded in each step by analyzing the updated DOM state returned after the tool execution.
 - If an action fails (e.g., selector not found or disabled), try scrolling, finding a parent/sibling element, or adapting your strategy.
 - Keep execution steps focused. Do not repeat the same failing action.
@@ -268,7 +378,7 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
             HumanMessage(content=f"Current webpage interactive elements:\n{coordinator.format_dom_for_llm(initial_dom)}\n\nTask: {user_prompt}")
         ]
         
-        max_steps = 15
+        max_steps = DEFAULT_MAX_AGENT_STEPS
         step = 0
         
         await coordinator.send_status("Agent thinking and planning first action...")

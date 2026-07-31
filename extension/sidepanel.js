@@ -12,6 +12,8 @@ const messagesContainer = document.getElementById('messages-container');
 const promptInput = document.getElementById('prompt-input');
 const btnSend = document.getElementById('btn-send');
 
+const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
+
 // Setup WebSocket Connection
 function connectWS() {
   wsStatus.textContent = "Connecting...";
@@ -62,16 +64,10 @@ function connectWS() {
         }
         
         try {
-          // Attempt to dispatch to content script
-          const response = await sendMessageToTab(tab.id, {
-            type: 'execute_action',
-            action: data.action,
-            selector: data.selector,
-            value: data.value
-          });
+          const response = await executeAgentAction(tab, data);
           
           if (response && response.status === 'success') {
-            sendResult({ status: "success", dom_tree: response.dom_tree });
+            sendResult({ status: "success", dom_tree: response.dom_tree, page_text: response.page_text || null });
           } else {
             sendResult({ status: "error", error: response ? response.error : "Unknown error in page interaction" });
           }
@@ -79,14 +75,9 @@ function connectWS() {
           console.warn("Direct messaging failed, trying to inject content script and retry...", err);
           try {
             await injectContentScript(tab.id);
-            const response = await sendMessageToTab(tab.id, {
-              type: 'execute_action',
-              action: data.action,
-              selector: data.selector,
-              value: data.value
-            });
+            const response = await executeAgentAction(tab, data);
             if (response && response.status === 'success') {
-              sendResult({ status: "success", dom_tree: response.dom_tree });
+              sendResult({ status: "success", dom_tree: response.dom_tree, page_text: response.page_text || null });
             } else {
               sendResult({ status: "error", error: response ? response.error : "Execution error after injection" });
             }
@@ -99,6 +90,54 @@ function connectWS() {
       console.error("Error processing WebSocket packet:", err);
     }
   };
+}
+
+async function executeAgentAction(tab, data) {
+  if (TAB_LEVEL_ACTIONS.has(data.action)) {
+    await executeTabAction(tab.id, data.action, data.value);
+    await delay(900);
+    await injectContentScript(tab.id);
+    return await sendMessageToTab(tab.id, { type: 'get_dom' });
+  }
+
+  if (data.action === "get_text") {
+    return await sendMessageToTab(tab.id, { type: 'get_page_text' });
+  }
+
+  return await sendMessageToTab(tab.id, {
+    type: 'execute_action',
+    action: data.action,
+    selector: data.selector,
+    value: data.value
+  });
+}
+
+async function executeTabAction(tabId, action, value) {
+  return new Promise((resolve, reject) => {
+    const callback = () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    };
+
+    if (action === "navigate") {
+      chrome.tabs.update(tabId, { url: value }, callback);
+    } else if (action === "back") {
+      chrome.tabs.goBack(tabId, callback);
+    } else if (action === "forward") {
+      chrome.tabs.goForward(tabId, callback);
+    } else if (action === "reload") {
+      chrome.tabs.reload(tabId, {}, callback);
+    } else {
+      reject(new Error(`Unsupported tab action: ${action}`));
+    }
+  });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Send execution results back to backend WebSocket
