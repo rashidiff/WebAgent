@@ -1,6 +1,7 @@
 import os
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -9,16 +10,22 @@ from database import init_db, list_sessions, get_session_history
 
 load_dotenv(override=True)
 
+AUTH_TOKEN = os.getenv("AGENT_AUTH_TOKEN", "").strip()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="Browser Agent Backend",
     description="Local FastAPI WebSocket server directing the Web Browser AI Agent.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
-
-@app.on_event("startup")
-async def on_startup():
-    init_db()
 
 # CORS is only relevant to the plain HTTP endpoints (GET /sessions*); the extension talks to
 # this server exclusively over WebSocket, which CORS does not gate. Default to allowing no
@@ -31,11 +38,30 @@ if _cors_origins:
         allow_origins=_cors_origins,
         allow_credentials=False,
         allow_methods=["GET"],
-        allow_headers=["*"],
+        allow_headers=["X-Agent-Token"],
     )
+
+
+def require_http_auth(request: Request) -> None:
+    if not AUTH_TOKEN:
+        return
+    supplied = request.headers.get("X-Agent-Token") or request.query_params.get("token")
+    if supplied != AUTH_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing local agent token.")
+
+
+def websocket_authorized(websocket: WebSocket) -> bool:
+    if not AUTH_TOKEN:
+        return True
+    supplied = websocket.query_params.get("token")
+    return supplied == AUTH_TOKEN
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    if not websocket_authorized(websocket):
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
     print("[WebSocket] Extension sidepanel connected.")
     
@@ -102,14 +128,16 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @app.get("/sessions")
-async def get_sessions():
+async def get_sessions(request: Request):
     """Lists all recorded agent sessions, most recent first."""
+    require_http_auth(request)
     return await asyncio.to_thread(list_sessions)
 
 
 @app.get("/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, request: Request):
     """Returns the persisted messages and browser actions for a session."""
+    require_http_auth(request)
     history = await asyncio.to_thread(get_session_history, session_id)
     if not history["messages"] and not history["actions"]:
         raise HTTPException(status_code=404, detail="Session not found or has no recorded history.")

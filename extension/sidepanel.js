@@ -3,6 +3,7 @@
 let socket = null;
 let isAgentRunning = false;
 let backendUrl = "http://127.0.0.1:8000";
+let authToken = "";
 
 // DOM Elements
 const wsStatus = document.getElementById('ws-status');
@@ -20,6 +21,7 @@ const timeline = document.getElementById('timeline');
 const btnSettings = document.getElementById('btn-settings');
 const settingsPanel = document.getElementById('settings-panel');
 const backendUrlInput = document.getElementById('backend-url-input');
+const authTokenInput = document.getElementById('auth-token-input');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnHistory = document.getElementById('btn-history');
 const historyList = document.getElementById('history-list');
@@ -32,7 +34,10 @@ function connectWS() {
   wsStatus.className = "connecting";
   document.getElementById('status-dot').className = "status-indicator";
   
-  const wsUrl = backendUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:").replace(/\/$/, "") + "/ws";
+  let wsUrl = backendUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:").replace(/\/$/, "") + "/ws";
+  if (authToken) {
+    wsUrl += `?token=${encodeURIComponent(authToken)}`;
+  }
   socket = new WebSocket(wsUrl);
   
   socket.onopen = () => {
@@ -124,9 +129,11 @@ function storageSet(values) {
 }
 
 async function loadSettings() {
-  const saved = await storageGet({ backendUrl: backendUrl });
+  const saved = await storageGet({ backendUrl: backendUrl, authToken: "" });
   backendUrl = normalizeBackendUrl(saved.backendUrl || backendUrl);
+  authToken = saved.authToken || "";
   backendUrlInput.value = backendUrl;
+  authTokenInput.value = authToken;
 }
 
 function normalizeBackendUrl(url) {
@@ -140,8 +147,9 @@ function normalizeBackendUrl(url) {
 
 async function saveSettings() {
   backendUrl = normalizeBackendUrl(backendUrlInput.value);
+  authToken = authTokenInput.value.trim();
   backendUrlInput.value = backendUrl;
-  await storageSet({ backendUrl });
+  await storageSet({ backendUrl, authToken });
   updateLog("Settings saved. Reconnecting...");
   if (socket && socket.readyState !== WebSocket.CLOSED) {
     socket.close();
@@ -155,7 +163,7 @@ async function loadSessionHistory() {
   historyList.textContent = "Loading history...";
 
   try {
-    const response = await fetch(`${backendUrl}/sessions`);
+    const response = await fetch(`${backendUrl}/sessions`, authFetchOptions());
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const sessions = await response.json();
     historyList.innerHTML = "";
@@ -188,13 +196,18 @@ async function loadSessionHistory() {
 
 async function openSessionHistory(sessionId) {
   try {
-    const response = await fetch(`${backendUrl}/sessions/${encodeURIComponent(sessionId)}`);
+    const response = await fetch(`${backendUrl}/sessions/${encodeURIComponent(sessionId)}`, authFetchOptions());
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const history = await response.json();
     appendMessage("assistant", `Session ${sessionId}\n\n${history.messages.map((m) => `- **${m.role}**: ${m.content}`).join("\n")}`);
   } catch (err) {
     appendMessage("assistant", `Error loading session history: ${err.message}`);
   }
+}
+
+function authFetchOptions() {
+  if (!authToken) return {};
+  return { headers: { "X-Agent-Token": authToken } };
 }
 
 function requestActionApproval(data) {

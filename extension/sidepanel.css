@@ -149,6 +149,21 @@ header {
   padding: 7px 8px;
 }
 
+.settings-token-label {
+  margin-top: 10px;
+}
+
+.settings-token-input {
+  background: #131314;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 8px;
+  width: 100%;
+}
+
 .settings-row button,
 .history-action {
   background: #232325;
