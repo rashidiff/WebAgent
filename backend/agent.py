@@ -110,11 +110,14 @@ class SessionCoordinator:
         self.history = HistoryStore()
         self.turn_summaries: List[str] = []
         self.last_page_text: Dict[str, Any] = {}
+        self.successful_actions: List[str] = []
 
     def record_turn(self, user_prompt: str, outcome: str) -> None:
         """Remembers a short summary of a completed task so follow-up prompts in the
         same session have continuity, without re-feeding full DOM/tool history."""
-        summary = f'- Task: "{user_prompt[:150]}" -> {outcome[:200]}'
+        url = self.last_page_text.get("url") or "unknown URL"
+        actions = "; ".join(self.successful_actions[-5:]) or "no successful actions recorded"
+        summary = f'- Task: "{user_prompt[:150]}" at {url} -> {outcome[:200]} | recent actions: {actions}'
         self.turn_summaries.append(summary)
         self.turn_summaries = self.turn_summaries[-5:]
 
@@ -155,6 +158,8 @@ class SessionCoordinator:
                 if response.get("page_text"):
                     self.last_page_text = response.get("page_text") or {}
                 await self.history.log_action(action, selector, value, status="success")
+                self.successful_actions.append(f"{action}({selector or value or 'page'})")
+                self.successful_actions = self.successful_actions[-20:]
                 result = f"Success: Action executed. Current webpage interactive elements:\n{self.format_dom_for_llm(self.current_dom)}"
                 if action == "get_text" and self.last_page_text:
                     result += f"\n\nCurrent page text:\n{self.format_page_text_for_llm(self.last_page_text)}"
@@ -352,6 +357,11 @@ def compact_old_tool_messages(messages: List[Any]) -> None:
             )
 
 
+def tool_signature(tool_name: str, tool_args: Dict[str, Any]) -> str:
+    normalized = ",".join(f"{key}={tool_args.get(key)}" for key in sorted(tool_args))
+    return f"{tool_name}:{normalized}"
+
+
 SYSTEM_PROMPT = """You are a highly capable Browser AI Agent. Your goal is to help the user complete their tasks on the active browser tab.
 You will be provided with the user's prompt and a serialized structure of the webpage's interactive elements (DOM state).
 
@@ -374,7 +384,9 @@ INSTRUCTIONS:
 - Think briefly before every tool call: state what you expect the action to change, then verify after the tool result.
 - You must carefully verify whether your action succeeded in each step by analyzing the updated DOM state returned after the tool execution.
 - If an action fails (e.g., selector not found or disabled), try scrolling, finding a parent/sibling element, or adapting your strategy.
-- Keep execution steps focused. Do not repeat the same failing action.
+- Keep execution steps focused. Do not repeat the same failing action or the same selector/value pair after an error.
+- Use `get_page_text()` when the user asks a reading/research question or when visible non-interactive content is needed.
+- Use `wait_for_page_change()` after actions that may trigger dynamic loading before deciding the result failed.
 - Once you successfully achieve the user's goal (e.g., search results are displayed, items are added to cart, details are submitted), stop calling tools and summarize the completion. Your final response MUST start with:
   "SUCCESS: [description of what was accomplished and final page state]"
 - If you run into blocker constraints (e.g. CAPTCHA, payment gates, missing login details, server errors), stop calling tools and respond with:
@@ -413,6 +425,7 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
         
         max_steps = DEFAULT_MAX_AGENT_STEPS
         step = 0
+        failed_tool_signatures = set()
         
         await coordinator.send_status("Agent thinking and planning first action...")
         
@@ -433,10 +446,19 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
                     tool_id = tool_call["id"]
+                    signature = tool_signature(tool_name, tool_args)
                     
                     print(f"[Agent Loop] Executing tool {tool_name} with args {tool_args}...")
+                    await coordinator.send_status(
+                        f"PLAN: Step {step}: {tool_name} with {tool_args}. Verifying after execution."
+                    )
                     
-                    if tool_name in tool_map:
+                    if signature in failed_tool_signatures:
+                        tool_result = (
+                            "Error: This exact action already failed earlier in this run. "
+                            "Choose a different selector, scroll, read page text, or adapt the strategy."
+                        )
+                    elif tool_name in tool_map:
                         try:
                             # Invoke tool, which communicates over WebSockets
                             tool_result = await tool_map[tool_name].ainvoke(tool_args)
@@ -450,8 +472,11 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                         content=tool_result,
                         tool_call_id=tool_id
                     ))
+
+                    if tool_result.startswith("Error:"):
+                        failed_tool_signatures.add(signature)
                 
-                await coordinator.send_status("Action completed. Analyzing updated page state...")
+                await coordinator.send_status("VERIFY: Action completed. Analyzing updated page state...")
             else:
                 # No tool calls means agent outputted its final response
                 output = response.content.strip()
