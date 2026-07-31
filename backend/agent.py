@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 
@@ -18,6 +19,7 @@ SENSITIVE_ACTION_KEYWORDS = [
     "submit", "send", "buy", "purchase", "pay", "checkout", "order", "delete", "remove",
     "confirm", "transfer", "withdraw", "sign", "agree", "accept", "place order", "book",
 ]
+logger = logging.getLogger("browser_agent.agent")
 
 # Factory function to obtain the configured Chat LLM
 def get_llm():
@@ -431,7 +433,7 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
         
         while step < max_steps and coordinator.is_running:
             step += 1
-            print(f"[Agent Loop] Step {step}...")
+            logger.info("Agent loop step %s", step)
 
             # Keep only the latest DOM snapshot in full; older ones are collapsed
             compact_old_tool_messages(messages)
@@ -448,7 +450,7 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                     tool_id = tool_call["id"]
                     signature = tool_signature(tool_name, tool_args)
                     
-                    print(f"[Agent Loop] Executing tool {tool_name} with args {tool_args}...")
+                    logger.info("Executing tool %s with args %s", tool_name, tool_args)
                     await coordinator.send_status(
                         f"PLAN: Step {step}: {tool_name} with {tool_args}. Verifying after execution."
                     )
@@ -480,7 +482,7 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
             else:
                 # No tool calls means agent outputted its final response
                 output = response.content.strip()
-                print(f"[Agent Loop] Final Answer: {output}")
+                logger.info("Agent final answer: %s", output)
                 
                 if not (output.startswith("SUCCESS:") or output.startswith("ERROR:") or output.startswith("FINISHED:")):
                     output = f"FINISHED: {output}"
@@ -497,14 +499,14 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
             await coordinator.send_status(limit_msg)
 
     except asyncio.CancelledError:
-        print("Agent execution was cancelled.")
+        logger.info("Agent execution was cancelled")
         cancel_msg = "ERROR: Agent execution stopped by user command."
         await coordinator.history.log_message("assistant", cancel_msg)
         coordinator.record_turn(user_prompt, cancel_msg)
         await coordinator.send_status(cancel_msg)
     except Exception as e:
         error_msg = f"ERROR: Execution failed: {str(e)}"
-        print(error_msg)
+        logger.exception(error_msg)
         await coordinator.history.log_message("assistant", error_msg)
         coordinator.record_turn(user_prompt, error_msg)
         await coordinator.send_status(error_msg)

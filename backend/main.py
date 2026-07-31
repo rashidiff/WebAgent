@@ -1,5 +1,6 @@
 import os
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,12 @@ from agent import SessionCoordinator, run_browser_agent
 from database import init_db, list_sessions, get_session_history
 
 load_dotenv(override=True)
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger("browser_agent.main")
 
 AUTH_TOKEN = os.getenv("AGENT_AUTH_TOKEN", "").strip()
 
@@ -63,7 +70,7 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     await websocket.accept()
-    print("[WebSocket] Extension sidepanel connected.")
+    logger.info("Extension sidepanel connected")
     
     coordinator = SessionCoordinator(websocket)
     await coordinator.history.start_session()
@@ -74,7 +81,7 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_json()
             event_type = data.get("type")
             
-            print(f"[WebSocket] Event received: '{event_type}'")
+            logger.info("WebSocket event received: %s", event_type)
             
             if event_type == "user_input":
                 prompt = (data.get("prompt") or "").strip()
@@ -103,7 +110,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 coordinator.is_running = False
                 if coordinator.agent_task and not coordinator.agent_task.done():
                     coordinator.agent_task.cancel()
-                    print("[Agent] Execution cancelled by stop signal.")
+                    logger.info("Agent execution cancelled by stop signal")
                 await coordinator.send_status("FINISHED: Stopped by user.")
                 
             elif event_type == "reset_session":
@@ -113,12 +120,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 coordinator.current_dom = []
                 while not coordinator.response_queue.empty():
                     coordinator.response_queue.get_nowait()
-                print("[Session] State reset complete.")
+                logger.info("Session state reset complete")
                 
     except WebSocketDisconnect:
-        print("[WebSocket] Extension sidepanel disconnected.")
+        logger.info("Extension sidepanel disconnected")
     except Exception as e:
-        print(f"[WebSocket] Error encountered: {str(e)}")
+        logger.exception("WebSocket error encountered: %s", str(e))
     finally:
         # Make sure agent task is terminated if connection terminates
         if coordinator.agent_task and not coordinator.agent_task.done():
@@ -148,5 +155,5 @@ if __name__ == "__main__":
     import uvicorn
     host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8000"))
-    print(f"Starting browser agent backend server at http://{host}:{port}")
+    logger.info("Starting browser agent backend server at http://%s:%s", host, port)
     uvicorn.run("main:app", host=host, port=port, reload=True)
