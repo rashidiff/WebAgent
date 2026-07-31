@@ -111,6 +111,83 @@ header {
   background: rgba(255, 133, 155, 0.1);
 }
 
+.settings-panel {
+  margin: 0 20px 10px 20px;
+  padding: 12px;
+  background: #1e1e20;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.settings-panel.hidden {
+  display: none;
+}
+
+.settings-panel label {
+  color: var(--text-secondary);
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+}
+
+.settings-row input {
+  background: #131314;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  min-width: 0;
+  padding: 7px 8px;
+}
+
+.settings-row button,
+.history-action {
+  background: #232325;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 7px 9px;
+}
+
+.history-list {
+  border-top: 1px solid var(--panel-border);
+  margin-top: 10px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-top: 8px;
+}
+
+.history-list.hidden {
+  display: none;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.history-meta {
+  color: var(--text-secondary);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Floating Status Log Console */
 .console-bar {
   padding: 6px 14px;

@@ -29,8 +29,24 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z" />
         </svg>
       </button>
+      <button id="btn-settings" class="icon-btn" title="Settings">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" style="width: 15px; height: 15px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.658.84.148.066.293.14.434.224.325.193.73.186 1.044-.025l1.08-.72a1.125 1.125 0 0 1 1.45.12l1.833 1.833c.389.389.44 1.002.12 1.45l-.72 1.08c-.211.314-.218.719-.025 1.044.084.141.158.286.224.434.154.345.466.595.84.658l1.281.213c.542.09.94.56.94 1.11v2.593c0 .55-.398 1.02-.94 1.11l-1.281.213c-.374.063-.686.313-.84.658a6.74 6.74 0 0 1-.224.434c-.193.325-.186.73.025 1.044l.72 1.08c.32.448.269 1.061-.12 1.45l-1.833 1.833a1.125 1.125 0 0 1-1.45.12l-1.08-.72c-.314-.211-.719-.218-1.044-.025a6.74 6.74 0 0 1-.434.224c-.345.154-.595.466-.658.84l-.213 1.281c-.09.542-.56.94-1.11.94h-2.593c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.063-.374-.313-.686-.658-.84a6.74 6.74 0 0 1-.434-.224c-.325-.193-.73-.186-1.044.025l-1.08.72a1.125 1.125 0 0 1-1.45-.12L2.88 18.307a1.125 1.125 0 0 1-.12-1.45l.72-1.08c.211-.314.218-.719.025-1.044a6.74 6.74 0 0 1-.224-.434c-.154-.345-.466-.595-.84-.658l-1.281-.213A1.125 1.125 0 0 1 .22 12.317V9.724c0-.55.398-1.02.94-1.11l1.281-.213c.374-.063.686-.313.84-.658.066-.148.14-.293.224-.434.193-.325.186-.73-.025-1.044l-.72-1.08a1.125 1.125 0 0 1 .12-1.45l1.833-1.833a1.125 1.125 0 0 1 1.45-.12l1.08.72c.314.211.719.218 1.044.025.141-.084.286-.158.434-.224.345-.154.595-.466.658-.84l.213-1.281Z" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+        </svg>
+      </button>
     </div>
   </header>
+
+  <section id="settings-panel" class="settings-panel hidden">
+    <label for="backend-url-input">Backend URL</label>
+    <div class="settings-row">
+      <input id="backend-url-input" type="url" value="http://127.0.0.1:8000">
+      <button id="btn-save-settings" type="button">Save</button>
+      <button id="btn-history" type="button">History</button>
+    </div>
+    <div id="history-list" class="history-list hidden"></div>
+  </section>
 
   <!-- Live Agent Logs Console -->
   <div class="console-bar">

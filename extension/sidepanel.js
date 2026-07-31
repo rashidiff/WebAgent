@@ -2,6 +2,7 @@
 
 let socket = null;
 let isAgentRunning = false;
+let backendUrl = "http://127.0.0.1:8000";
 
 // DOM Elements
 const wsStatus = document.getElementById('ws-status');
@@ -16,6 +17,12 @@ const approvalText = document.getElementById('approval-text');
 const btnApprove = document.getElementById('btn-approve');
 const btnReject = document.getElementById('btn-reject');
 const timeline = document.getElementById('timeline');
+const btnSettings = document.getElementById('btn-settings');
+const settingsPanel = document.getElementById('settings-panel');
+const backendUrlInput = document.getElementById('backend-url-input');
+const btnSaveSettings = document.getElementById('btn-save-settings');
+const btnHistory = document.getElementById('btn-history');
+const historyList = document.getElementById('history-list');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
 
@@ -25,8 +32,8 @@ function connectWS() {
   wsStatus.className = "connecting";
   document.getElementById('status-dot').className = "status-indicator";
   
-  // Connect to the local FastAPI WebSocket server
-  socket = new WebSocket("ws://127.0.0.1:8000/ws");
+  const wsUrl = backendUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:").replace(/\/$/, "") + "/ws";
+  socket = new WebSocket(wsUrl);
   
   socket.onopen = () => {
     wsStatus.textContent = "Connected";
@@ -106,6 +113,88 @@ function connectWS() {
       console.error("Error processing WebSocket packet:", err);
     }
   };
+}
+
+function storageGet(keys) {
+  return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+}
+
+function storageSet(values) {
+  return new Promise((resolve) => chrome.storage.local.set(values, resolve));
+}
+
+async function loadSettings() {
+  const saved = await storageGet({ backendUrl: backendUrl });
+  backendUrl = normalizeBackendUrl(saved.backendUrl || backendUrl);
+  backendUrlInput.value = backendUrl;
+}
+
+function normalizeBackendUrl(url) {
+  const clean = (url || "").trim().replace(/\/$/, "");
+  if (!clean) return "http://127.0.0.1:8000";
+  if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+    return `http://${clean}`;
+  }
+  return clean;
+}
+
+async function saveSettings() {
+  backendUrl = normalizeBackendUrl(backendUrlInput.value);
+  backendUrlInput.value = backendUrl;
+  await storageSet({ backendUrl });
+  updateLog("Settings saved. Reconnecting...");
+  if (socket && socket.readyState !== WebSocket.CLOSED) {
+    socket.close();
+  } else {
+    connectWS();
+  }
+}
+
+async function loadSessionHistory() {
+  historyList.classList.remove("hidden");
+  historyList.textContent = "Loading history...";
+
+  try {
+    const response = await fetch(`${backendUrl}/sessions`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const sessions = await response.json();
+    historyList.innerHTML = "";
+
+    if (!sessions.length) {
+      historyList.textContent = "No sessions recorded yet.";
+      return;
+    }
+
+    for (const session of sessions.slice(0, 10)) {
+      const row = document.createElement("div");
+      row.className = "history-item";
+      const meta = document.createElement("div");
+      meta.className = "history-meta";
+      meta.title = session.id;
+      meta.textContent = `${new Date(session.started_at).toLocaleString()} ${session.ended_at ? "completed" : "open"}`;
+      const button = document.createElement("button");
+      button.className = "history-action";
+      button.type = "button";
+      button.textContent = "Open";
+      button.addEventListener("click", () => openSessionHistory(session.id));
+      row.appendChild(meta);
+      row.appendChild(button);
+      historyList.appendChild(row);
+    }
+  } catch (err) {
+    historyList.textContent = `History error: ${err.message}`;
+  }
+}
+
+async function openSessionHistory(sessionId) {
+  try {
+    const response = await fetch(`${backendUrl}/sessions/${encodeURIComponent(sessionId)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const history = await response.json();
+    appendMessage("assistant", `Session ${sessionId}\n\n${history.messages.map((m) => `- **${m.role}**: ${m.content}`).join("\n")}`);
+  } catch (err) {
+    appendMessage("assistant", `Error loading session history: ${err.message}`);
+  }
 }
 
 function requestActionApproval(data) {
@@ -467,6 +556,11 @@ promptInput.addEventListener('keydown', (e) => {
 });
 btnStop.addEventListener('click', sendStopSignal);
 btnReset.addEventListener('click', resetSession);
+btnSettings.addEventListener('click', () => {
+  settingsPanel.classList.toggle("hidden");
+});
+btnSaveSettings.addEventListener('click', saveSettings);
+btnHistory.addEventListener('click', loadSessionHistory);
 
 // Initialize Connection on Load
-connectWS();
+loadSettings().then(connectWS);
