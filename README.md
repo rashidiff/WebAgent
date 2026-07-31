@@ -15,6 +15,10 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 - **Multi-Model Support**: Pre-configured for **DeepSeek** (`deepseek-chat`), with seamless fallbacks to **Google Gemini** (`gemini-1.5-flash`), **OpenAI** (`gpt-4o-mini`), or **Anthropic** (`claude-3-5-sonnet-latest`).
 - **Persistent History**: Every chat message and browser action is logged to a local SQLite database (`backend/agent_history.db`), retrievable via `GET /sessions` and `GET /sessions/{id}`.
 - **Context-Aware Agent Loop**: Caps the number of DOM elements sent per step, collapses older DOM snapshots to keep context size bounded across long tasks, and remembers a short summary of prior tasks completed in the same session.
+- **Expanded Browser Tools**: Supports navigation, keyboard events, select controls, hover menus, browser history, reload, wait steps, and visible page-text reads in addition to click/input/scroll.
+- **Human Approval Guard**: Sensitive actions such as submit, send, delete, checkout, payment, and credential-like input require explicit sidepanel approval by default.
+- **Sidepanel Settings & History Viewer**: Configure the backend URL and optional auth token from the extension UI, then inspect recent persisted sessions without leaving the sidepanel.
+- **Optional Local Auth**: Set `AGENT_AUTH_TOKEN` to protect the WebSocket and session history endpoints on shared machines.
 
 ---
 
@@ -72,6 +76,10 @@ browser-agent/
    LLM_PROVIDER=deepseek
    LLM_MODEL_NAME=deepseek-chat
    LLM_MAX_TOKENS=2048
+   MAX_AGENT_STEPS=15
+   ACTION_TIMEOUT_SECONDS=40
+   MAX_DOM_ELEMENTS=150
+   REQUIRE_ACTION_APPROVAL=true
    DEEPSEEK_API_KEY=your_deepseek_api_key_here
    ```
    Only the API key matching your chosen `LLM_PROVIDER` (`gemini`, `openai`, `anthropic`, or `deepseek`) is required. See `.env.example` for the full list of supported variables.
@@ -92,6 +100,8 @@ browser-agent/
 4. Select the `browser-agent/extension` folder.
 5. Pin the **Web Browser AI Agent** extension to your toolbar.
 
+The extension uses `activeTab`, `scripting`, `tabs`, and broad host access so it can keep acting after agent-driven cross-origin navigation in the active tab. Sensitive actions are still gated by the local approval guard.
+
 ---
 
 ## 🚀 How to Use
@@ -109,3 +119,16 @@ Every WebSocket connection is logged as a session in `backend/agent_history.db` 
 
 - `GET /sessions` — lists all sessions, most recent first.
 - `GET /sessions/{session_id}` — returns the full list of chat messages and browser actions recorded for that session.
+
+If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings.
+
+---
+
+## ✅ Development Checks
+
+```bash
+python -m py_compile backend/main.py backend/agent.py backend/database.py
+python -m unittest discover backend/tests
+node --check extension/content.js
+node --check extension/sidepanel.js
+```
