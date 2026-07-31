@@ -189,6 +189,41 @@ header {
   background: #2b2b2e;
 }
 
+.timeline {
+  margin: 0 20px 10px 20px;
+  padding: 8px 0;
+  border-top: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--panel-border);
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.timeline.hidden {
+  display: none;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.timeline-kind {
+  color: var(--accent-color);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.timeline-text {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Messages Pane */
 .messages-pane {
   flex: 1;

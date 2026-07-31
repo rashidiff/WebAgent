@@ -15,6 +15,7 @@ const approvalPanel = document.getElementById('approval-panel');
 const approvalText = document.getElementById('approval-text');
 const btnApprove = document.getElementById('btn-approve');
 const btnReject = document.getElementById('btn-reject');
+const timeline = document.getElementById('timeline');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
 
@@ -53,6 +54,7 @@ function connectWS() {
       
       if (data.type === 'agent_status') {
         updateLog(data.message);
+        appendTimeline(getStatusKind(data.message), data.message);
         // If it starts with a result token, post it to the main message log
         if (data.message.startsWith("SUCCESS:") || data.message.startsWith("ERROR:") || data.message.startsWith("FINISHED:")) {
           appendMessage("assistant", data.message);
@@ -60,6 +62,7 @@ function connectWS() {
         }
       } else if (data.type === 'agent_action') {
         updateLog(`Agent Action: ${data.action} on ${data.selector || 'page'}`);
+        appendTimeline("action", `${data.action}${data.selector ? ` ${data.selector}` : ""}${data.value ? ` -> ${data.value}` : ""}`);
 
         if (data.requires_approval) {
           const approved = await requestActionApproval(data);
@@ -180,6 +183,7 @@ function delay(ms) {
 // Send execution results back to backend WebSocket
 function sendResult(payload) {
   if (socket && socket.readyState === WebSocket.OPEN) {
+    appendTimeline(payload.status === "success" ? "result" : "error", payload.error || "Action completed");
     socket.send(JSON.stringify({
       type: "action_result",
       ...payload
@@ -227,6 +231,35 @@ async function injectContentScript(tabId) {
 // Update log status text in header console
 function updateLog(text) {
   logText.textContent = text;
+}
+
+function getStatusKind(message) {
+  if (message.startsWith("PLAN:")) return "plan";
+  if (message.startsWith("VERIFY:")) return "verify";
+  if (message.startsWith("SUCCESS:")) return "done";
+  if (message.startsWith("ERROR:")) return "error";
+  return "status";
+}
+
+function appendTimeline(kind, text) {
+  timeline.classList.remove("hidden");
+  const item = document.createElement("div");
+  item.className = "timeline-item";
+  const kindNode = document.createElement("span");
+  kindNode.className = "timeline-kind";
+  kindNode.textContent = kind;
+  const textNode = document.createElement("span");
+  textNode.className = "timeline-text";
+  textNode.title = text;
+  textNode.textContent = text;
+  item.appendChild(kindNode);
+  item.appendChild(textNode);
+  timeline.appendChild(item);
+
+  while (timeline.children.length > 20) {
+    timeline.removeChild(timeline.firstChild);
+  }
+  timeline.scrollTop = timeline.scrollHeight;
 }
 
 // Clean status prefixes from agent responses
@@ -418,6 +451,8 @@ function resetSession() {
       </div>
     </div>
   `;
+  timeline.innerHTML = "";
+  timeline.classList.add("hidden");
   updateLog("Session reset complete.");
   stopSessionState();
 }
