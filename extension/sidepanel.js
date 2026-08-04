@@ -27,6 +27,7 @@ const btnHistory = document.getElementById('btn-history');
 const historyList = document.getElementById('history-list');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
+const NAVIGATION_SETTLE_DELAY_MS = 900;
 
 // Setup WebSocket Connection
 function connectWS() {
@@ -237,7 +238,7 @@ function requestActionApproval(data) {
 async function executeAgentAction(tab, data) {
   if (TAB_LEVEL_ACTIONS.has(data.action)) {
     await executeTabAction(tab.id, data.action, data.value);
-    await delay(900);
+    await delay(NAVIGATION_SETTLE_DELAY_MS);
     await injectContentScript(tab.id);
     return await sendMessageToTab(tab.id, { type: 'get_dom' });
   }

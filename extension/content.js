@@ -2,7 +2,7 @@
 if (!globalThis.__webAgentContentScriptLoaded) {
 globalThis.__webAgentContentScriptLoaded = true;
 
-const MAX_INTERACTIVE_ELEMENTS = 200;
+const DOM_ELEMENT_BUDGET = 150;
 const PAGE_SETTLE_DELAY_MS = 700;
 
 function cleanText(text, maxLength = 160) {
@@ -100,7 +100,7 @@ function getInteractiveDOM() {
   let agentIdCounter = 1;
 
   for (const el of allElements) {
-    if (interactiveList.length >= MAX_INTERACTIVE_ELEMENTS) break;
+    if (interactiveList.length >= DOM_ELEMENT_BUDGET) break;
     const tagName = el.tagName;
     const role = el.getAttribute("role");
     const hasOnClick = el.hasAttribute("onclick") || typeof el.onclick === "function";
