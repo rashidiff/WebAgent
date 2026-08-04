@@ -455,14 +455,15 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
         ]
         
         max_steps = DEFAULT_MAX_AGENT_STEPS
-        step = 0
+        model_turn = 0
+        executed_steps = 0
         failed_tool_signatures = set()
         
         await coordinator.send_status("Agent thinking and planning first action...")
         
-        while step < max_steps and coordinator.is_running:
-            step += 1
-            logger.info("Agent loop step %s", step)
+        while coordinator.is_running:
+            model_turn += 1
+            logger.info("Agent loop turn %s (executed steps: %s/%s)", model_turn, executed_steps, max_steps)
 
             # Keep only the latest DOM snapshot in full; older ones are collapsed
             compact_old_tool_messages(messages)
@@ -474,6 +475,14 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
             # Check if model requested any tool calls
             if hasattr(response, "tool_calls") and response.tool_calls:
                 for tool_call in response.tool_calls:
+                    if executed_steps >= max_steps:
+                        limit_msg = f"ERROR: Reached maximum execution limit of {max_steps} steps without completion."
+                        await coordinator.history.log_message("assistant", limit_msg)
+                        coordinator.record_turn(user_prompt, limit_msg)
+                        await coordinator.send_status(limit_msg)
+                        return
+
+                    executed_steps += 1
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
                     tool_id = tool_call["id"]
@@ -481,7 +490,7 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                     
                     logger.info("Executing tool %s with args %s", tool_name, tool_args)
                     await coordinator.send_status(
-                        f"PLAN: Step {step}: {tool_name} with {tool_args}. Verifying after execution."
+                        f"PLAN: Step {executed_steps}/{max_steps}: {tool_name} with {tool_args}. Verifying after execution."
                     )
                     
                     if signature in failed_tool_signatures:
@@ -520,12 +529,6 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                 coordinator.record_turn(user_prompt, output)
                 await coordinator.send_status(output)
                 return
-
-        if step >= max_steps:
-            limit_msg = "ERROR: Reached maximum execution limit of 15 steps without completion."
-            await coordinator.history.log_message("assistant", limit_msg)
-            coordinator.record_turn(user_prompt, limit_msg)
-            await coordinator.send_status(limit_msg)
 
     except asyncio.CancelledError:
         logger.info("Agent execution was cancelled")

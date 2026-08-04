@@ -3,11 +3,14 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import database
+import agent
 from agent import SessionCoordinator, tool_signature
+from langchain_core.messages import AIMessage
 
 
 class AgentCoreTests(unittest.TestCase):
@@ -60,6 +63,134 @@ class AgentCoreTests(unittest.TestCase):
         second = tool_signature("click_element", {"value": "b", "selector": "a"})
 
         self.assertEqual(first, second)
+
+    def test_final_response_without_tool_call_does_not_hit_step_limit(self):
+        coordinator = SessionCoordinator(websocket=None)
+        statuses = []
+
+        async def fake_status(message):
+            statuses.append(message)
+
+        async def fake_log_message(role, content):
+            return None
+
+        async def fake_log_action(action, selector, value, status, detail=""):
+            return None
+
+        coordinator.send_status = fake_status
+        coordinator.history.log_message = fake_log_message
+        coordinator.history.log_action = fake_log_action
+
+        class FakeLLM:
+            def bind_tools(self, tools):
+                return self
+
+            async def ainvoke(self, messages):
+                return AIMessage(content="SUCCESS: Task completed immediately.")
+
+        async def run():
+            with patch.object(agent, "get_llm", return_value=FakeLLM()), patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 1):
+                await agent.run_browser_agent(coordinator, "done", [])
+
+        asyncio.run(run())
+        self.assertIn("SUCCESS: Task completed immediately.", statuses)
+        self.assertNotIn("ERROR: Reached maximum execution limit of 1 steps without completion.", statuses)
+
+    def test_multiple_tool_calls_consume_step_budget_per_execution(self):
+        coordinator = SessionCoordinator(websocket=None)
+        statuses = []
+        action_calls = []
+
+        async def fake_status(message):
+            statuses.append(message)
+
+        async def fake_execute_action(action_name, selector=None, value=None):
+            action_calls.append((action_name, selector, value))
+            return "Success: Action executed. Current webpage interactive elements:\n[Empty page or no interactive elements found]"
+
+        async def fake_log_message(role, content):
+            return None
+
+        async def fake_log_action(action, selector, value, status, detail=""):
+            return None
+
+        coordinator.send_status = fake_status
+        coordinator.execute_action = fake_execute_action
+        coordinator.history.log_message = fake_log_message
+        coordinator.history.log_action = fake_log_action
+
+        first_response = AIMessage(
+            content="",
+            additional_kwargs={
+                "tool_calls": [
+                    {"id": "call-1", "function": {"name": "go_back", "arguments": "{}"}, "type": "function"},
+                    {"id": "call-2", "function": {"name": "go_forward", "arguments": "{}"}, "type": "function"},
+                ]
+            },
+        )
+        final_response = AIMessage(content="SUCCESS: Done after two actions.")
+
+        class FakeLLM:
+            def __init__(self):
+                self.responses = [first_response, final_response]
+
+            def bind_tools(self, tools):
+                return self
+
+            async def ainvoke(self, messages):
+                return self.responses.pop(0)
+
+        async def run():
+            with patch.object(agent, "get_llm", return_value=FakeLLM()), patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 2):
+                await agent.run_browser_agent(coordinator, "two actions", [])
+
+        asyncio.run(run())
+        self.assertEqual(action_calls, [("back", None, None), ("forward", None, None)])
+        self.assertIn("PLAN: Step 1/2: go_back with {}. Verifying after execution.", statuses)
+        self.assertIn("PLAN: Step 2/2: go_forward with {}. Verifying after execution.", statuses)
+        self.assertIn("SUCCESS: Done after two actions.", statuses)
+
+    def test_limit_message_uses_configured_step_budget(self):
+        coordinator = SessionCoordinator(websocket=None)
+        statuses = []
+
+        async def fake_status(message):
+            statuses.append(message)
+
+        async def fake_log_message(role, content):
+            return None
+
+        async def fake_log_action(action, selector, value, status, detail=""):
+            return None
+
+        coordinator.send_status = fake_status
+        coordinator.history.log_message = fake_log_message
+        coordinator.history.log_action = fake_log_action
+
+        repeated_tool_response = AIMessage(
+            content="",
+            additional_kwargs={
+                "tool_calls": [
+                    {"id": "call-1", "function": {"name": "go_back", "arguments": "{}"}, "type": "function"},
+                    {"id": "call-2", "function": {"name": "go_forward", "arguments": "{}"}, "type": "function"},
+                ]
+            },
+        )
+
+        class FakeLLM:
+            def bind_tools(self, tools):
+                return self
+
+            async def ainvoke(self, messages):
+                return repeated_tool_response
+
+        async def run():
+            with patch.object(agent, "get_llm", return_value=FakeLLM()), patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 1):
+                await agent.run_browser_agent(coordinator, "limit", [])
+
+        asyncio.run(run())
+        self.assertIn("PLAN: Step 1/1: go_back with {}. Verifying after execution.", statuses)
+        self.assertIn("ERROR: Reached maximum execution limit of 1 steps without completion.", statuses)
 
 
 class DatabaseTests(unittest.TestCase):
