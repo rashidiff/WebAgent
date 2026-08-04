@@ -15,6 +15,7 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 - **Multi-Model Support**: Pre-configured for **DeepSeek** (`deepseek-chat`), with seamless fallbacks to **Google Gemini** (`gemini-1.5-flash`), **OpenAI** (`gpt-4o-mini`), or **Anthropic** (`claude-3-5-sonnet-latest`).
 - **Persistent History**: Every chat message and browser action is logged to a local SQLite database (`backend/agent_history.db`), retrievable via `GET /sessions` and `GET /sessions/{id}`.
 - **Context-Aware Agent Loop**: Caps the number of DOM elements sent per step, collapses older DOM snapshots to keep context size bounded across long tasks, and remembers a short summary of prior tasks completed in the same session.
+- **Step-Budgeted Execution**: `MAX_AGENT_STEPS` limits executed browser actions, not just model reasoning turns, so multi-action runs stop at a predictable budget.
 - **Expanded Browser Tools**: Supports navigation, keyboard events, select controls, hover menus, browser history, reload, wait steps, and visible page-text reads in addition to click/input/scroll.
 - **Human Approval Guard**: Sensitive actions such as submit, send, delete, checkout, payment, and credential-like input require explicit sidepanel approval by default.
 - **Sidepanel Settings & History Viewer**: Configure the backend URL and optional auth token from the extension UI, then inspect recent persisted sessions without leaving the sidepanel.
@@ -82,7 +83,7 @@ browser-agent/
    REQUIRE_ACTION_APPROVAL=true
    DEEPSEEK_API_KEY=your_deepseek_api_key_here
    ```
-   Only the API key matching your chosen `LLM_PROVIDER` (`gemini`, `openai`, `anthropic`, or `deepseek`) is required. See `.env.example` for the full list of supported variables.
+   Only the API key matching your chosen `LLM_PROVIDER` (`gemini`, `openai`, `anthropic`, or `deepseek`) is required. `MAX_AGENT_STEPS` counts executed browser tool calls, and `MAX_DOM_ELEMENTS=150` should stay aligned with the extension-side DOM capture budget. See `.env.example` for the full list of supported variables.
 
 5. **Start the server**:
    ```bash
@@ -101,6 +102,7 @@ browser-agent/
 5. Pin the **Web Browser AI Agent** extension to your toolbar.
 
 The extension uses `activeTab`, `scripting`, `tabs`, and broad host access so it can keep acting after agent-driven cross-origin navigation in the active tab. Sensitive actions are still gated by the local approval guard.
+The current extension defaults wait about `900ms` after tab-level navigation and `700ms` after DOM actions before re-reading the page state.
 
 ---
 
