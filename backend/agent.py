@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
 from backend.database import HistoryStore
+from backend.schemas import AgentActionEvent, AgentStatusEvent
 from backend.settings import get_settings
 
 load_dotenv(override=True)
@@ -129,10 +130,9 @@ class SessionCoordinator:
     async def send_status(self, message: str):
         """Sends real-time status update to the Chrome Extension sidepanel."""
         if self.websocket:
-            await self.websocket.send_json({
-                "type": "agent_status",
-                "message": message
-            })
+            await self.websocket.send_json(
+                AgentStatusEvent(type="agent_status", message=message).model_dump()
+            )
 
     async def execute_action(self, action: str, selector: str = None, value: str = None) -> str:
         """Sends action to Chrome Extension, pauses execution, and waits for updated DOM tree."""
@@ -147,15 +147,17 @@ class SessionCoordinator:
         expected_fingerprint = self.get_expected_fingerprint(selector)
 
         # Send action to extension via WebSocket
-        await self.websocket.send_json({
-            "type": "agent_action",
-            "action": action,
-            "selector": selector,
-            "value": value,
-            "expected_fingerprint": expected_fingerprint,
-            "requires_approval": bool(approval_reason),
-            "approval_reason": approval_reason
-        })
+        await self.websocket.send_json(
+            AgentActionEvent(
+                type="agent_action",
+                action=action,
+                selector=selector,
+                value=value,
+                expected_fingerprint=expected_fingerprint,
+                requires_approval=bool(approval_reason),
+                approval_reason=approval_reason,
+            ).model_dump()
+        )
         
         # Await response from content script with timeout
         try:
