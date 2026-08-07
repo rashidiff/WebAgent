@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from backend import agent, database
 from backend.agent import SessionCoordinator, tool_signature
+from backend.settings import Settings
 from langchain_core.messages import AIMessage
 
 
@@ -210,6 +211,49 @@ class DatabaseTests(unittest.TestCase):
 
             self.assertEqual(history["messages"][0]["content"], "hello")
             self.assertEqual(history["actions"][0]["action"], "click")
+
+    def test_list_sessions_supports_limit_and_offset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+
+            async def seed_sessions():
+                for _ in range(3):
+                    store = database.HistoryStore()
+                    await store.start_session()
+                    await store.end_session()
+
+            asyncio.run(seed_sessions())
+            page = database.list_sessions(limit=1, offset=1)
+
+            self.assertEqual(len(page), 1)
+            self.assertEqual(database.count_sessions(), 3)
+
+    def test_get_session_history_includes_session_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+            store = database.HistoryStore()
+
+            async def seed_history():
+                await store.start_session()
+                await store.log_message("user", "hello")
+                await store.end_session()
+
+            asyncio.run(seed_history())
+            history = database.get_session_history(store.session_id)
+
+            self.assertEqual(history["session_id"], store.session_id)
+
+
+class SettingsTests(unittest.TestCase):
+    def test_settings_split_cors_origins(self):
+        settings = Settings(CORS_ALLOWED_ORIGINS="http://localhost:3000, https://example.com")
+
+        self.assertEqual(
+            settings.cors_origins,
+            ["http://localhost:3000", "https://example.com"],
+        )
 
 
 if __name__ == "__main__":
