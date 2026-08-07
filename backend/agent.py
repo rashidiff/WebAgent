@@ -8,13 +8,15 @@ from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
 from backend.database import HistoryStore
+from backend.settings import get_settings
 
 load_dotenv(override=True)
+settings = get_settings()
 
-DEFAULT_ACTION_TIMEOUT_SECONDS = float(os.getenv("ACTION_TIMEOUT_SECONDS", "40"))
-DEFAULT_MAX_DOM_ELEMENTS = int(os.getenv("MAX_DOM_ELEMENTS", "150"))
-DEFAULT_MAX_AGENT_STEPS = int(os.getenv("MAX_AGENT_STEPS", "15"))
-REQUIRE_ACTION_APPROVAL = os.getenv("REQUIRE_ACTION_APPROVAL", "true").lower() not in {"0", "false", "no"}
+DEFAULT_ACTION_TIMEOUT_SECONDS = settings.action_timeout_seconds
+DEFAULT_MAX_DOM_ELEMENTS = settings.max_dom_elements
+DEFAULT_MAX_AGENT_STEPS = settings.max_agent_steps
+REQUIRE_ACTION_APPROVAL = settings.require_action_approval
 SENSITIVE_ACTION_KEYWORDS = [
     "submit", "send", "buy", "purchase", "pay", "checkout", "order", "delete", "remove",
     "confirm", "transfer", "withdraw", "sign", "agree", "accept", "place order", "book",
@@ -23,15 +25,15 @@ logger = logging.getLogger("browser_agent.agent")
 
 # Factory function to obtain the configured Chat LLM
 def get_llm():
-    provider = os.getenv("LLM_PROVIDER", "gemini").lower()
-    model_name = os.getenv("LLM_MODEL_NAME")
-    max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2048"))
+    provider = settings.llm_provider.lower()
+    model_name = settings.llm_model_name
+    max_tokens = settings.llm_max_tokens
 
     if provider == "gemini":
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        api_key = settings.gemini_api_key or settings.google_api_key
         if not api_key or "your_" in api_key:
             # Fallback to general GOOGLE_API_KEY
-            api_key = os.getenv("GOOGLE_API_KEY")
+            api_key = settings.google_api_key
         if not api_key or "your_" in api_key:
             raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY is not configured in your .env file.")
             
@@ -47,7 +49,7 @@ def get_llm():
         )
         
     elif provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
+        api_key = settings.openai_api_key
         if not api_key or "your_" in api_key:
             raise ValueError("OPENAI_API_KEY is not configured in your .env file.")
             
@@ -63,7 +65,7 @@ def get_llm():
         )
 
     elif provider == "anthropic":
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = settings.anthropic_api_key
         if not api_key or "your_" in api_key:
             raise ValueError("ANTHROPIC_API_KEY is not configured in your .env file.")
             
@@ -81,7 +83,7 @@ def get_llm():
             raise ImportError("langchain-anthropic package is not installed. Please run: pip install langchain-anthropic")
             
     elif provider == "deepseek":
-        api_key = os.getenv("DEEPSEEK_API_KEY")
+        api_key = settings.deepseek_api_key
         if not api_key or "your_" in api_key:
             raise ValueError("DEEPSEEK_API_KEY is not configured in your .env file.")
             
