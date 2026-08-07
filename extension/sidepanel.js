@@ -28,6 +28,7 @@ const historyList = document.getElementById('history-list');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
 const NAVIGATION_SETTLE_DELAY_MS = 900;
+const HISTORY_PAGE_SIZE = 10;
 
 // Setup WebSocket Connection
 function connectWS() {
@@ -164,9 +165,10 @@ async function loadSessionHistory() {
   historyList.textContent = "Loading history...";
 
   try {
-    const response = await fetch(`${backendUrl}/sessions`, authFetchOptions());
+    const response = await fetch(`${backendUrl}/sessions?limit=${HISTORY_PAGE_SIZE}&offset=0`, authFetchOptions());
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const sessions = await response.json();
+    const payload = await response.json();
+    const sessions = payload.sessions || [];
     historyList.innerHTML = "";
 
     if (!sessions.length) {
@@ -174,7 +176,7 @@ async function loadSessionHistory() {
       return;
     }
 
-    for (const session of sessions.slice(0, 10)) {
+    for (const session of sessions) {
       const row = document.createElement("div");
       row.className = "history-item";
       const meta = document.createElement("div");
