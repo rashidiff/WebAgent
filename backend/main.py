@@ -8,16 +8,18 @@ from dotenv import load_dotenv
 
 from backend.agent import SessionCoordinator, run_browser_agent
 from backend.database import init_db, list_sessions, get_session_history
+from backend.settings import get_settings
 
 load_dotenv(override=True)
+settings = get_settings()
 
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    level=settings.log_level.upper(),
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 logger = logging.getLogger("browser_agent.main")
 
-AUTH_TOKEN = os.getenv("AGENT_AUTH_TOKEN", "").strip()
+AUTH_TOKEN = settings.agent_auth_token.strip()
 
 
 @asynccontextmanager
@@ -38,7 +40,7 @@ app = FastAPI(
 # this server exclusively over WebSocket, which CORS does not gate. Default to allowing no
 # cross-origin browser access at all, since /sessions exposes locally logged chat/action
 # history and a wildcard origin would let any open webpage's JS read it via fetch().
-_cors_origins = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+_cors_origins = settings.cors_origins
 if _cors_origins:
     app.add_middleware(
         CORSMiddleware,
@@ -153,7 +155,5 @@ async def get_session(session_id: str, request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", "8000"))
-    logger.info("Starting browser agent backend server at http://%s:%s", host, port)
-    uvicorn.run("main:app", host=host, port=port, reload=True)
+    logger.info("Starting browser agent backend server at http://%s:%s", settings.host, settings.port)
+    uvicorn.run("backend.main:app", host=settings.host, port=settings.port, reload=True)
