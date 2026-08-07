@@ -11,7 +11,7 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 - **In-Browser Execution**: Automates tasks directly on your active, logged-in tab (e.g. adding items to a cart, filling out forms, searching pages).
 - **Gemini Minimalist UI**: A stunning, modern dark-themed chat interface matching the Google Gemini chat client layout.
 - **Robust DOM Serialization**: Automatically parses webpage DOM structures, filtering out non-interactive elements and tagging interactive nodes with a temporary `data-agent-id` attribute to guarantee 100% targeting accuracy.
-- **Modern LangChain Loop**: Uses a custom tool-calling loop with `llm.bind_tools` and standard message streams, making it fully compatible with LangChain v1.3.11+.
+- **Modern LangChain Loop**: Uses a custom tool-calling loop with `llm.bind_tools` and standard message streams, validated against the pinned LangChain 1.3 dependency line in `backend/constraints.txt`.
 - **Multi-Model Support**: Pre-configured for **DeepSeek** (`deepseek-chat`), with seamless fallbacks to **Google Gemini** (`gemini-1.5-flash`), **OpenAI** (`gpt-4o-mini`), or **Anthropic** (`claude-3-5-sonnet-latest`).
 - **Persistent History**: Every chat message and browser action is logged to a local SQLite database (`backend/agent_history.db`), retrievable via `GET /sessions` and `GET /sessions/{id}`.
 - **Context-Aware Agent Loop**: Caps the number of DOM elements sent per step, collapses older DOM snapshots to keep context size bounded across long tasks, and remembers a short summary of prior tasks completed in the same session.
@@ -67,6 +67,7 @@ browser-agent/
    ```bash
    pip install -r requirements.txt -c constraints.txt
    ```
+   The backend now ships with pinned dependency versions in `constraints.txt` and mirrored project metadata in the repo-level `pyproject.toml`.
 
 4. **Configure your API keys**:
    Copy the provided template and fill in your values:
@@ -87,7 +88,7 @@ browser-agent/
 
 5. **Start the server**:
    ```bash
-   python main.py
+   python -m backend.main
    ```
    *The server starts listening on `http://127.0.0.1:8000`.*
 
@@ -117,9 +118,9 @@ The current extension defaults wait about `900ms` after tab-level navigation and
 
 ## 🗄️ Session History
 
-Every WebSocket connection is logged as a session in `backend/agent_history.db` (SQLite, created automatically on first run). Two read-only endpoints expose it:
+Every WebSocket connection is logged as a session in `backend/agent_history.db` (SQLite, created automatically on first run, or `AGENT_DB_PATH` if set). Two read-only endpoints expose it:
 
-- `GET /sessions` — lists all sessions, most recent first.
+- `GET /sessions?limit=20&offset=0` — lists sessions with pagination metadata.
 - `GET /sessions/{session_id}` — returns the full list of chat messages and browser actions recorded for that session.
 
 If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings.
@@ -129,7 +130,7 @@ If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same t
 ## ✅ Development Checks
 
 ```bash
-python -m py_compile backend/main.py backend/agent.py backend/database.py
+python -m py_compile backend/main.py backend/agent.py backend/database.py backend/settings.py backend/schemas.py
 python -m unittest discover backend/tests
 node --check extension/content.js
 node --check extension/sidepanel.js
