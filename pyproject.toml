@@ -1,0 +1,23 @@
+[project]
+name = "webagent"
+version = "1.1.0"
+description = "Local browser AI agent powered by a Chrome extension and FastAPI."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.141.1",
+    "uvicorn==0.52.1",
+    "websockets==15.0.1",
+    "langchain==1.3.14",
+    "langchain-core==1.4.9",
+    "langchain-google-genai==4.2.6",
+    "langchain-openai==1.4.2",
+    "langchain-anthropic==1.5.4",
+    "python-dotenv==1.0.1",
+    "pydantic==2.7.4",
+    "pydantic-settings==2.14.2",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
