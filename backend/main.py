@@ -5,9 +5,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from pydantic import ValidationError
 
 from backend.agent import SessionCoordinator, run_browser_agent
 from backend.database import init_db, list_sessions, get_session_history
+from backend.schemas import ActionResultEvent, UserInputEvent
 from backend.settings import get_settings
 
 load_dotenv(override=True)
@@ -86,8 +88,9 @@ async def websocket_endpoint(websocket: WebSocket):
             logger.info("WebSocket event received: %s", event_type)
             
             if event_type == "user_input":
-                prompt = (data.get("prompt") or "").strip()
-                dom_tree = data.get("dom_tree", [])
+                user_event = UserInputEvent.model_validate(data)
+                prompt = user_event.prompt.strip()
+                dom_tree = [item.model_dump(exclude_none=True) for item in user_event.dom_tree]
 
                 if not prompt:
                     await coordinator.send_status("ERROR: Prompt cannot be empty.")
@@ -106,7 +109,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 
             elif event_type == "action_result":
                 # Push webpage action execution results into the coordinator queue to resume tools
-                await coordinator.response_queue.put(data)
+                action_result = ActionResultEvent.model_validate(data)
+                await coordinator.response_queue.put(action_result.model_dump(exclude_none=True))
                 
             elif event_type == "stop_agent":
                 coordinator.is_running = False
@@ -126,6 +130,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 
     except WebSocketDisconnect:
         logger.info("Extension sidepanel disconnected")
+    except ValidationError as exc:
+        logger.warning("Rejected invalid WebSocket payload: %s", exc)
+        await websocket.close(code=1003, reason="Invalid payload")
     except Exception as e:
         logger.exception("WebSocket error encountered: %s", str(e))
     finally:
