@@ -2,14 +2,14 @@ import os
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from backend.agent import SessionCoordinator, run_browser_agent
-from backend.database import init_db, list_sessions, get_session_history
-from backend.schemas import ActionResultEvent, UserInputEvent
+from backend.database import count_sessions, get_session_history, init_db, list_sessions
+from backend.schemas import ActionResultEvent, SessionHistoryResponse, SessionListResponse, UserInputEvent
 from backend.settings import get_settings
 
 load_dotenv(override=True)
@@ -143,14 +143,20 @@ async def websocket_endpoint(websocket: WebSocket):
         await coordinator.history.end_session()
 
 
-@app.get("/sessions")
-async def get_sessions(request: Request):
+@app.get("/sessions", response_model=SessionListResponse)
+async def get_sessions(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
     """Lists all recorded agent sessions, most recent first."""
     require_http_auth(request)
-    return await asyncio.to_thread(list_sessions)
+    sessions = await asyncio.to_thread(list_sessions, limit, offset)
+    total = await asyncio.to_thread(count_sessions)
+    return SessionListResponse(sessions=sessions, total=total, limit=limit, offset=offset)
 
 
-@app.get("/sessions/{session_id}")
+@app.get("/sessions/{session_id}", response_model=SessionHistoryResponse)
 async def get_session(session_id: str, request: Request):
     """Returns the persisted messages and browser actions for a session."""
     require_http_auth(request)
