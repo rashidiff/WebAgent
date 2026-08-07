@@ -6,8 +6,8 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPExcept
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from agent import SessionCoordinator, run_browser_agent
-from database import init_db, list_sessions, get_session_history
+from backend.agent import SessionCoordinator, run_browser_agent
+from backend.database import init_db, list_sessions, get_session_history
 
 load_dotenv(override=True)
 

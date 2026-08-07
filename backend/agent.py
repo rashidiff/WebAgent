@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
-from database import HistoryStore
+from backend.database import HistoryStore
 
 load_dotenv(override=True)
 

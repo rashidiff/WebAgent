@@ -5,11 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-import database
-import agent
-from agent import SessionCoordinator, tool_signature
+from backend import agent, database
+from backend.agent import SessionCoordinator, tool_signature
 from langchain_core.messages import AIMessage
 
 
