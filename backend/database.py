@@ -139,6 +139,7 @@ def get_session_history(session_id: str) -> Dict[str, Any]:
             (session_id,),
         ).fetchall()
         return {
+            "session_id": session_id,
             "messages": [dict(row) for row in messages],
             "actions": [dict(row) for row in actions],
         }
@@ -146,14 +147,24 @@ def get_session_history(session_id: str) -> Dict[str, Any]:
         conn.close()
 
 
-def list_sessions() -> List[Dict[str, Any]]:
-    """Returns all recorded sessions, most recent first."""
+def list_sessions(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    """Returns recorded sessions ordered by most recent first."""
     conn = _get_connection()
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT id, started_at, ended_at FROM sessions ORDER BY started_at DESC"
+            "SELECT id, started_at, ended_at FROM sessions ORDER BY started_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def count_sessions() -> int:
+    conn = _get_connection()
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()
+        return int(row[0] if row else 0)
     finally:
         conn.close()
