@@ -1,11 +1,14 @@
-import os
+from pathlib import Path
 import sqlite3
 import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-DB_PATH = os.getenv("AGENT_DB_PATH", os.path.join(os.path.dirname(__file__), "agent_history.db"))
+from backend.settings import get_settings
+
+_DEFAULT_DB_PATH = get_settings().agent_db_path or str(Path(__file__).with_name("agent_history.db"))
+DB_PATH = _DEFAULT_DB_PATH
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
