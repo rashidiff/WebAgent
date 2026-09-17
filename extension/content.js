@@ -77,6 +77,37 @@ function getSameOriginFrameDocument(frame) {
   }
 }
 
+function getReadableText(root = document, seenRoots = new Set()) {
+  if (!root || seenRoots.has(root)) return "";
+  seenRoots.add(root);
+
+  const rootText = root.body
+    ? root.body.innerText
+    : (root.host ? root.textContent : root.documentElement && root.documentElement.innerText) || "";
+  const pieces = [rootText];
+
+  let elements = [];
+  try {
+    elements = Array.from(root.querySelectorAll("*"));
+  } catch (err) {
+    return pieces.filter(Boolean).join("\n");
+  }
+
+  for (const el of elements) {
+    if (el.shadowRoot) {
+      pieces.push(getReadableText(el.shadowRoot, seenRoots));
+    }
+    if (el.tagName === "IFRAME" || el.tagName === "FRAME") {
+      const frameDocument = getSameOriginFrameDocument(el);
+      if (frameDocument) {
+        pieces.push(getReadableText(frameDocument, seenRoots));
+      }
+    }
+  }
+
+  return pieces.filter(Boolean).join("\n");
+}
+
 function queryAllElements(root = document, seenRoots = new Set()) {
   if (!root || seenRoots.has(root)) return [];
   seenRoots.add(root);
@@ -201,7 +232,7 @@ function getInteractiveDOM() {
 }
 
 function getPageText() {
-  const text = cleanText(document.body ? document.body.innerText : document.documentElement.innerText, 6000);
+  const text = cleanText(getReadableText(document), 6000);
   return {
     title: document.title,
     url: window.location.href,
@@ -227,6 +258,45 @@ function dispatchKey(key) {
   target.dispatchEvent(new KeyboardEvent("keydown", eventInit));
   target.dispatchEvent(new KeyboardEvent("keypress", eventInit));
   target.dispatchEvent(new KeyboardEvent("keyup", eventInit));
+}
+
+function getElementCenter(element) {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: Math.round(rect.left + rect.width / 2),
+    y: Math.round(rect.top + rect.height / 2)
+  };
+}
+
+function dispatchPointerMouseEvent(element, type, point) {
+  const eventInit = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view: window,
+    clientX: point.x,
+    clientY: point.y,
+    pointerId: 1,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    buttons: type === "pointerup" || type === "mouseup" || type === "click" ? 0 : 1
+  };
+
+  if (type.startsWith("pointer")) {
+    element.dispatchEvent(new PointerEvent(type, eventInit));
+  } else {
+    element.dispatchEvent(new MouseEvent(type, eventInit));
+  }
+}
+
+function prepareElementForAction(element) {
+  if (typeof element.scrollIntoView === "function") {
+    element.scrollIntoView({ block: "center", inline: "center", behavior: "auto" });
+  }
+  if (typeof element.focus === "function") {
+    element.focus({ preventScroll: true });
+  }
 }
 
 function executePageAction(action, selector, value, expectedFingerprint) {
@@ -285,16 +355,21 @@ function executePageAction(action, selector, value, expectedFingerprint) {
     throw new Error(`Element is disabled: ${selector}`);
   }
 
+  prepareElementForAction(element);
+
   if (action === "click") {
-    element.focus();
-    element.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+    const center = getElementCenter(element);
+    dispatchPointerMouseEvent(element, "pointerover", center);
+    dispatchPointerMouseEvent(element, "mouseover", center);
+    dispatchPointerMouseEvent(element, "pointerdown", center);
+    dispatchPointerMouseEvent(element, "mousedown", center);
+    dispatchPointerMouseEvent(element, "pointerup", center);
+    dispatchPointerMouseEvent(element, "mouseup", center);
     element.click();
     if (element.tagName === "INPUT" && (element.type === "checkbox" || element.type === "radio")) {
       element.dispatchEvent(new Event("change", { bubbles: true }));
     }
   } else if (action === "input") {
-    element.focus();
     if (element.isContentEditable) {
       element.textContent = value;
     } else {
@@ -310,8 +385,10 @@ function executePageAction(action, selector, value, expectedFingerprint) {
     element.dispatchEvent(new Event("input", { bubbles: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   } else if (action === "hover") {
-    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true, view: window }));
-    element.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, cancelable: true, view: window }));
+    const center = getElementCenter(element);
+    dispatchPointerMouseEvent(element, "pointerover", center);
+    dispatchPointerMouseEvent(element, "mouseover", center);
+    element.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, cancelable: true, composed: true, view: window, clientX: center.x, clientY: center.y }));
   } else {
     throw new Error(`Unsupported action: ${action}`);
   }
