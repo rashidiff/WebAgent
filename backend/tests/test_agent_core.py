@@ -9,7 +9,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from backend import agent, database
 from backend.agent import SessionCoordinator, tool_signature
+from backend.main import app
 from backend.settings import Settings
+from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
 
@@ -349,6 +351,43 @@ class SettingsTests(unittest.TestCase):
             settings.cors_origins,
             ["http://localhost:3000", "https://example.com"],
         )
+
+
+class HistoryApiTests(unittest.TestCase):
+    def test_sessions_endpoints_list_and_delete_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+            store = database.HistoryStore()
+
+            async def seed_history():
+                await store.start_session()
+                await store.log_message("user", "hello")
+                await store.end_session()
+
+            asyncio.run(seed_history())
+
+            with TestClient(app) as client:
+                response = client.get("/sessions")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["total"], 1)
+
+                delete_response = client.delete(f"/sessions/{store.session_id}")
+                self.assertEqual(delete_response.status_code, 200)
+                self.assertEqual(delete_response.json(), {"deleted": 1})
+
+                response = client.get("/sessions")
+                self.assertEqual(response.json()["total"], 0)
+
+    def test_delete_missing_session_returns_404(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+
+            with TestClient(app) as client:
+                response = client.delete("/sessions/missing")
+
+            self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

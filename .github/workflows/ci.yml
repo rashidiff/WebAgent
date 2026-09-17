@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt -c backend/constraints.txt
+
+      - name: Compile backend
+        run: python -m py_compile backend/main.py backend/agent.py backend/database.py backend/settings.py backend/schemas.py
+
+      - name: Run backend tests
+        run: python -m unittest discover backend/tests
+
+      - name: Check extension syntax
+        run: |
+          node --check extension/content.js
+          node --check extension/sidepanel.js
