@@ -28,6 +28,7 @@ const historyList = document.getElementById('history-list');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
 const NAVIGATION_SETTLE_DELAY_MS = 900;
+const NAVIGATION_TIMEOUT_MS = 8000;
 const HISTORY_PAGE_SIZE = 10;
 
 // Setup WebSocket Connection
@@ -81,7 +82,7 @@ function connectWS() {
         if (data.requires_approval) {
           const approved = await requestActionApproval(data);
           if (!approved) {
-            sendResult({ status: "error", error: `User rejected action: ${data.approval_reason || data.action}` });
+            sendResult(data, { status: "error", error: `User rejected action: ${data.approval_reason || data.action}` });
             updateLog("Action rejected by user.");
             return;
           }
@@ -89,7 +90,7 @@ function connectWS() {
         
         const tab = await getActiveTab();
         if (!tab) {
-          sendResult({ status: "error", error: "No active browser tab found" });
+          sendResult(data, { status: "error", error: "No active browser tab found" });
           return;
         }
         
@@ -97,9 +98,9 @@ function connectWS() {
           const response = await executeAgentAction(tab, data);
           
           if (response && response.status === 'success') {
-            sendResult({ status: "success", dom_tree: response.dom_tree, page_text: response.page_text || null });
+            sendResult(data, { status: "success", dom_tree: response.dom_tree, page_text: response.page_text || null });
           } else {
-            sendResult({ status: "error", error: response ? response.error : "Unknown error in page interaction" });
+            sendResult(data, { status: "error", error: response ? response.error : "Unknown error in page interaction" });
           }
         } catch (err) {
           console.warn("Direct messaging failed, trying to inject content script and retry...", err);
@@ -107,12 +108,12 @@ function connectWS() {
             await injectContentScript(tab.id);
             const response = await executeAgentAction(tab, data);
             if (response && response.status === 'success') {
-              sendResult({ status: "success", dom_tree: response.dom_tree, page_text: response.page_text || null });
+              sendResult(data, { status: "success", dom_tree: response.dom_tree, page_text: response.page_text || null });
             } else {
-              sendResult({ status: "error", error: response ? response.error : "Execution error after injection" });
+              sendResult(data, { status: "error", error: response ? response.error : "Execution error after injection" });
             }
           } catch (injectErr) {
-            sendResult({ status: "error", error: `Script injection failed: ${injectErr.message}` });
+            sendResult(data, { status: "error", error: `Script injection failed: ${injectErr.message}` });
           }
         }
       }
@@ -239,8 +240,9 @@ function requestActionApproval(data) {
 
 async function executeAgentAction(tab, data) {
   if (TAB_LEVEL_ACTIONS.has(data.action)) {
+    const navigationWait = waitForTabToSettle(tab.id);
     await executeTabAction(tab.id, data.action, data.value);
-    await delay(NAVIGATION_SETTLE_DELAY_MS);
+    await navigationWait;
     await injectContentScript(tab.id);
     return await sendMessageToTab(tab.id, { type: 'get_dom' });
   }
@@ -255,6 +257,34 @@ async function executeAgentAction(tab, data) {
     selector: data.selector,
     value: data.value,
     expected_fingerprint: data.expected_fingerprint || ""
+  });
+}
+
+function waitForTabToSettle(tabId) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let fallbackTimer = null;
+
+    const cleanup = () => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      clearTimeout(fallbackTimer);
+    };
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      setTimeout(resolve, NAVIGATION_SETTLE_DELAY_MS);
+    };
+
+    const onUpdated = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === "complete") {
+        finish();
+      }
+    };
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    fallbackTimer = setTimeout(finish, NAVIGATION_TIMEOUT_MS);
   });
 }
 
@@ -287,11 +317,13 @@ function delay(ms) {
 }
 
 // Send execution results back to backend WebSocket
-function sendResult(payload) {
+function sendResult(actionContext, payload) {
   if (socket && socket.readyState === WebSocket.OPEN) {
     appendTimeline(payload.status === "success" ? "result" : "error", payload.error || "Action completed");
     socket.send(JSON.stringify({
       type: "action_result",
+      run_id: actionContext.run_id,
+      action_id: actionContext.action_id,
       ...payload
     }));
   }

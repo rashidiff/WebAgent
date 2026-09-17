@@ -109,6 +109,13 @@ async def websocket_endpoint(websocket: WebSocket):
             elif event_type == "action_result":
                 # Push webpage action execution results into the coordinator queue to resume tools
                 action_result = ActionResultEvent.model_validate(data)
+                if (
+                    action_result.run_id
+                    and coordinator.current_run_id
+                    and action_result.run_id != coordinator.current_run_id
+                ):
+                    logger.warning("Ignoring stale action result for run_id=%s", action_result.run_id)
+                    continue
                 await coordinator.response_queue.put(action_result.model_dump(exclude_none=True))
                 
             elif event_type == "stop_agent":

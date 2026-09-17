@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from typing import Dict, Any, List
 from dotenv import load_dotenv
 
@@ -116,6 +117,7 @@ class SessionCoordinator:
         self.last_page_text: Dict[str, Any] = {}
         self.successful_actions: List[str] = []
         self.current_goal = ""
+        self.current_run_id = ""
 
     def record_turn(self, user_prompt: str, outcome: str) -> None:
         """Remembers a short summary of a completed task so follow-up prompts in the
@@ -144,12 +146,15 @@ class SessionCoordinator:
             
         approval_reason = self.get_approval_reason(action, selector, value)
         expected_fingerprint = self.get_expected_fingerprint(selector)
+        action_id = str(uuid.uuid4())
 
         # Send action to extension via WebSocket
         await self.websocket.send_json(
             AgentActionEvent(
                 type="agent_action",
                 action=action,
+                run_id=self.current_run_id,
+                action_id=action_id,
                 selector=selector,
                 value=value,
                 expected_fingerprint=expected_fingerprint,
@@ -160,7 +165,7 @@ class SessionCoordinator:
         
         # Await response from content script with timeout
         try:
-            response = await asyncio.wait_for(self.response_queue.get(), timeout=DEFAULT_ACTION_TIMEOUT_SECONDS)
+            response = await self.wait_for_action_response(action_id)
             if response.get("status") == "success":
                 self.current_dom = response.get("dom_tree", [])
                 if response.get("page_text"):
@@ -179,6 +184,26 @@ class SessionCoordinator:
         except asyncio.TimeoutError:
             await self.history.log_action(action, selector, value, status="timeout")
             return f"Error: Browser timed out waiting for action response. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
+
+    async def wait_for_action_response(self, action_id: str) -> Dict[str, Any]:
+        """Waits for the matching extension response, ignoring stale packets from older actions."""
+        deadline = asyncio.get_running_loop().time() + DEFAULT_ACTION_TIMEOUT_SECONDS
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+
+            response = await asyncio.wait_for(self.response_queue.get(), timeout=remaining)
+            response_action_id = response.get("action_id")
+            response_run_id = response.get("run_id")
+
+            if response_action_id and response_action_id != action_id:
+                logger.warning("Ignoring stale action result for action_id=%s", response_action_id)
+                continue
+            if response_run_id and response_run_id != self.current_run_id:
+                logger.warning("Ignoring stale action result for run_id=%s", response_run_id)
+                continue
+            return response
 
     def get_approval_reason(self, action: str, selector: str = None, value: str = None) -> str:
         if not REQUIRE_ACTION_APPROVAL:
@@ -430,6 +455,7 @@ Current User Goal: {user_prompt}
 
 async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, initial_dom: List[Dict[str, Any]]):
     try:
+        coordinator.current_run_id = str(uuid.uuid4())
         coordinator.current_goal = user_prompt
         coordinator.current_dom = initial_dom
         await coordinator.history.log_message("user", user_prompt)

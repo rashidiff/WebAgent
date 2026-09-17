@@ -3,6 +3,22 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+BrowserAction = Literal[
+    "click",
+    "input",
+    "scroll",
+    "navigate",
+    "key",
+    "select",
+    "hover",
+    "back",
+    "forward",
+    "reload",
+    "get_text",
+    "wait",
+]
+
+
 class InteractiveDomElement(BaseModel):
     id: int | None = None
     tagName: str | None = None
@@ -43,6 +59,8 @@ class UserInputEvent(BaseModel):
 class ActionResultEvent(BaseModel):
     type: Literal["action_result"]
     status: Literal["success", "error"]
+    run_id: str | None = None
+    action_id: str | None = None
     dom_tree: list[InteractiveDomElement] = Field(default_factory=list)
     page_text: PageTextPayload | None = None
     error: str | None = None
@@ -55,7 +73,9 @@ class AgentStatusEvent(BaseModel):
 
 class AgentActionEvent(BaseModel):
     type: Literal["agent_action"]
-    action: str
+    action: BrowserAction
+    run_id: str
+    action_id: str
     selector: str | None = None
     value: str | None = None
     expected_fingerprint: str = ""

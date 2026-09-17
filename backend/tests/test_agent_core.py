@@ -64,6 +64,51 @@ class AgentCoreTests(unittest.TestCase):
 
         self.assertEqual(first, second)
 
+    def test_execute_action_ignores_stale_action_result(self):
+        coordinator = SessionCoordinator(websocket=None)
+        coordinator.current_run_id = "run-current"
+        coordinator.current_dom = [{"selector": "a", "text": "Go"}]
+
+        sent_packets = []
+
+        class FakeWebSocket:
+            async def send_json(self, payload):
+                sent_packets.append(payload)
+
+        async def fake_log_action(action, selector, value, status, detail=""):
+            return None
+
+        coordinator.websocket = FakeWebSocket()
+        coordinator.history.log_action = fake_log_action
+
+        async def run():
+            async def feed_results():
+                while not sent_packets:
+                    await asyncio.sleep(0)
+                action_id = sent_packets[0]["action_id"]
+                await coordinator.response_queue.put({
+                    "status": "success",
+                    "run_id": "run-current",
+                    "action_id": "stale-action",
+                    "dom_tree": [{"selector": "stale"}],
+                })
+                await coordinator.response_queue.put({
+                    "status": "success",
+                    "run_id": "run-current",
+                    "action_id": action_id,
+                    "dom_tree": [{"selector": "fresh"}],
+                })
+
+            feeder = asyncio.create_task(feed_results())
+            result = await coordinator.execute_action("click", selector="a")
+            await feeder
+            return result
+
+        result = asyncio.run(run())
+
+        self.assertIn("Success: Action executed", result)
+        self.assertEqual(coordinator.current_dom, [{"selector": "fresh"}])
+
     def test_final_response_without_tool_call_does_not_hit_step_limit(self):
         coordinator = SessionCoordinator(websocket=None)
         statuses = []
