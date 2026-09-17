@@ -10,7 +10,7 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 
 - **In-Browser Execution**: Automates tasks directly on your active, logged-in tab (e.g. adding items to a cart, filling out forms, searching pages).
 - **Gemini Minimalist UI**: A stunning, modern dark-themed chat interface matching the Google Gemini chat client layout.
-- **Robust DOM Serialization**: Automatically parses webpage DOM structures, filtering out non-interactive elements and tagging interactive nodes with a temporary `data-agent-id` attribute to guarantee 100% targeting accuracy.
+- **Robust DOM Serialization**: Automatically parses webpage DOM structures, including nested open shadow roots and same-origin frames, filtering out non-interactive elements and tagging interactive nodes with a temporary `data-agent-id` attribute for reliable targeting.
 - **Modern LangChain Loop**: Uses a custom tool-calling loop with `llm.bind_tools` and standard message streams, validated against the pinned LangChain 1.3 dependency line in `backend/constraints.txt`.
 - **Multi-Model Support**: Pre-configured for **DeepSeek** (`deepseek-chat`), with seamless fallbacks to **Google Gemini** (`gemini-1.5-flash`), **OpenAI** (`gpt-4o-mini`), or **Anthropic** (`claude-3-5-sonnet-latest`).
 - **Persistent History**: Every chat message and browser action is logged to a local SQLite database (`backend/agent_history.db`), retrievable via `GET /sessions` and `GET /sessions/{id}`.

@@ -23,7 +23,7 @@ function getLabelText(el) {
 
   const id = el.getAttribute("id");
   if (id) {
-    const label = document.querySelector(`label[for="${cssEscape(id)}"]`);
+    const label = el.ownerDocument.querySelector(`label[for="${cssEscape(id)}"]`);
     if (label) return cleanText(label.innerText || label.textContent);
   }
 
@@ -69,12 +69,38 @@ function getElementFingerprint(el) {
   return Math.abs(hash).toString(36);
 }
 
-function queryAllElements(root = document) {
-  const elements = Array.from(root.querySelectorAll("*"));
-  const shadowHosts = elements.filter((el) => el.shadowRoot);
-  for (const host of shadowHosts) {
-    elements.push(...Array.from(host.shadowRoot.querySelectorAll("*")));
+function getSameOriginFrameDocument(frame) {
+  try {
+    return frame.contentDocument || (frame.contentWindow && frame.contentWindow.document) || null;
+  } catch (err) {
+    return null;
   }
+}
+
+function queryAllElements(root = document, seenRoots = new Set()) {
+  if (!root || seenRoots.has(root)) return [];
+  seenRoots.add(root);
+
+  let elements = [];
+  try {
+    elements = Array.from(root.querySelectorAll("*"));
+  } catch (err) {
+    return [];
+  }
+
+  for (const el of [...elements]) {
+    if (el.shadowRoot) {
+      elements.push(...queryAllElements(el.shadowRoot, seenRoots));
+    }
+
+    if (el.tagName === "IFRAME" || el.tagName === "FRAME") {
+      const frameDocument = getSameOriginFrameDocument(el);
+      if (frameDocument) {
+        elements.push(...queryAllElements(frameDocument, seenRoots));
+      }
+    }
+  }
+
   return elements;
 }
 
@@ -83,9 +109,12 @@ function findElement(selector) {
   if (direct) return direct;
 
   for (const el of queryAllElements()) {
-    if (el.shadowRoot) {
-      const shadowMatch = el.shadowRoot.querySelector(selector);
-      if (shadowMatch) return shadowMatch;
+    try {
+      if (typeof el.matches === "function" && el.matches(selector)) {
+        return el;
+      }
+    } catch (err) {
+      return null;
     }
   }
   return null;
