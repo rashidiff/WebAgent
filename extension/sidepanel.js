@@ -278,11 +278,13 @@ async function executeAgentAction(tab, data) {
 function waitForTabToSettle(tabId) {
   return new Promise((resolve) => {
     let settled = false;
-    let fallbackTimer = null;
+    let quietTimer = null;
+    let maxTimer = null;
 
     const cleanup = () => {
       chrome.tabs.onUpdated.removeListener(onUpdated);
-      clearTimeout(fallbackTimer);
+      clearTimeout(quietTimer);
+      clearTimeout(maxTimer);
     };
 
     const finish = () => {
@@ -293,13 +295,17 @@ function waitForTabToSettle(tabId) {
     };
 
     const onUpdated = (updatedTabId, changeInfo) => {
-      if (updatedTabId === tabId && changeInfo.status === "complete") {
+      if (updatedTabId !== tabId) return;
+      if (changeInfo.status === "loading") {
+        clearTimeout(quietTimer);
+      } else if (changeInfo.status === "complete") {
         finish();
       }
     };
 
     chrome.tabs.onUpdated.addListener(onUpdated);
-    fallbackTimer = setTimeout(finish, NAVIGATION_TIMEOUT_MS);
+    quietTimer = setTimeout(finish, NAVIGATION_SETTLE_DELAY_MS);
+    maxTimer = setTimeout(finish, NAVIGATION_TIMEOUT_MS);
   });
 }
 
