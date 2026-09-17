@@ -170,7 +170,7 @@ class SessionCoordinator:
                 self.current_dom = response.get("dom_tree", [])
                 if response.get("page_text"):
                     self.last_page_text = response.get("page_text") or {}
-                await self.history.log_action(action, selector, value, status="success")
+                await self.history.log_action(action, selector, self.redact_action_value(action, selector, value), status="success")
                 self.successful_actions.append(f"{action}({selector or value or 'page'})")
                 self.successful_actions = self.successful_actions[-20:]
                 result = f"Success: Action executed. Current webpage interactive elements:\n{self.format_dom_for_llm(self.current_dom)}"
@@ -179,10 +179,10 @@ class SessionCoordinator:
                 return result
             else:
                 err = response.get("error", "Unknown client error")
-                await self.history.log_action(action, selector, value, status="error", detail=err)
+                await self.history.log_action(action, selector, self.redact_action_value(action, selector, value), status="error", detail=err)
                 return f"Error: Action failed: {err}. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
         except asyncio.TimeoutError:
-            await self.history.log_action(action, selector, value, status="timeout")
+            await self.history.log_action(action, selector, self.redact_action_value(action, selector, value), status="timeout")
             return f"Error: Browser timed out waiting for action response. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
 
     async def wait_for_action_response(self, action_id: str) -> Dict[str, Any]:
@@ -212,7 +212,7 @@ class SessionCoordinator:
         if action in {"navigate", "back", "forward", "reload", "scroll", "hover", "wait", "get_text", "key"}:
             return ""
 
-        element = next((el for el in self.current_dom if el.get("selector") == selector), {})
+        element = self.get_element_for_selector(selector)
         element_text = " ".join(
             str(element.get(key) or "")
             for key in ["text", "label", "ariaLabel", "title", "name", "placeholder", "value", "href", "formAction"]
@@ -229,10 +229,32 @@ class SessionCoordinator:
 
         return ""
 
+    def get_element_for_selector(self, selector: str = None) -> Dict[str, Any]:
+        if not selector:
+            return {}
+        return next((el for el in self.current_dom if el.get("selector") == selector), {})
+
+    def redact_action_value(self, action: str, selector: str = None, value: str = None) -> str | None:
+        if value is None:
+            return None
+
+        element = self.get_element_for_selector(selector)
+        element_text = " ".join(
+            str(element.get(key) or "")
+            for key in ["text", "label", "ariaLabel", "title", "name", "placeholder", "type"]
+        ).lower()
+        input_type = str(element.get("type") or "").lower()
+        sensitive_input_types = {"password", "email", "tel", "number"}
+        sensitive_terms = {"password", "passcode", "token", "secret", "api key", "credit card", "card number", "cvv", "ssn"}
+
+        if action == "input" and (input_type in sensitive_input_types or any(term in element_text for term in sensitive_terms)):
+            return "[redacted]"
+        return value
+
     def get_expected_fingerprint(self, selector: str = None) -> str:
         if not selector:
             return ""
-        element = next((el for el in self.current_dom if el.get("selector") == selector), {})
+        element = self.get_element_for_selector(selector)
         return element.get("fingerprint") or ""
 
     MAX_DOM_ELEMENTS = DEFAULT_MAX_DOM_ELEMENTS

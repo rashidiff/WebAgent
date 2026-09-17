@@ -147,6 +147,37 @@ def get_session_history(session_id: str) -> Dict[str, Any]:
         conn.close()
 
 
+def delete_session(session_id: str) -> bool:
+    """Deletes one recorded session and its child records."""
+    conn = _get_connection()
+    try:
+        existing = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if not existing:
+            return False
+        conn.execute("DELETE FROM actions WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def clear_sessions() -> int:
+    """Deletes all recorded sessions and returns the number removed."""
+    conn = _get_connection()
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()
+        deleted = int(row[0] if row else 0)
+        conn.execute("DELETE FROM actions")
+        conn.execute("DELETE FROM messages")
+        conn.execute("DELETE FROM sessions")
+        conn.commit()
+        return deleted
+    finally:
+        conn.close()
+
+
 def list_sessions(limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
     """Returns recorded sessions ordered by most recent first."""
     conn = _get_connection()

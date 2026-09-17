@@ -47,6 +47,21 @@ class AgentCoreTests(unittest.TestCase):
 
         self.assertIn("Sensitive browser action", reason)
 
+    def test_sensitive_input_value_is_redacted_for_history(self):
+        coordinator = SessionCoordinator(websocket=None)
+        coordinator.current_dom = [
+            {
+                "selector": "[data-agent-id=\"3\"]",
+                "tagName": "INPUT",
+                "type": "password",
+                "label": "Password",
+            }
+        ]
+
+        value = coordinator.redact_action_value("input", "[data-agent-id=\"3\"]", "super-secret")
+
+        self.assertEqual(value, "[redacted]")
+
     def test_rank_dom_prioritizes_goal_terms(self):
         coordinator = SessionCoordinator(websocket=None)
         coordinator.current_goal = "search account settings"
@@ -289,6 +304,41 @@ class DatabaseTests(unittest.TestCase):
             history = database.get_session_history(store.session_id)
 
             self.assertEqual(history["session_id"], store.session_id)
+
+    def test_delete_session_removes_messages_and_actions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+            store = database.HistoryStore()
+
+            async def seed_history():
+                await store.start_session()
+                await store.log_message("user", "hello")
+                await store.log_action("click", "a", None, "success")
+                await store.end_session()
+
+            asyncio.run(seed_history())
+
+            self.assertTrue(database.delete_session(store.session_id))
+            history = database.get_session_history(store.session_id)
+            self.assertEqual(history["messages"], [])
+            self.assertEqual(history["actions"], [])
+
+    def test_clear_sessions_returns_deleted_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+
+            async def seed_sessions():
+                for _ in range(2):
+                    store = database.HistoryStore()
+                    await store.start_session()
+                    await store.end_session()
+
+            asyncio.run(seed_sessions())
+
+            self.assertEqual(database.clear_sessions(), 2)
+            self.assertEqual(database.count_sessions(), 0)
 
 
 class SettingsTests(unittest.TestCase):

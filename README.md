@@ -18,7 +18,8 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 - **Step-Budgeted Execution**: `MAX_AGENT_STEPS` limits executed browser actions, not just model reasoning turns, so multi-action runs stop at a predictable budget.
 - **Expanded Browser Tools**: Supports navigation, keyboard events, select controls, hover menus, browser history, reload, wait steps, and visible page-text reads in addition to click/input/scroll.
 - **Human Approval Guard**: Sensitive actions such as submit, send, delete, checkout, payment, and credential-like input require explicit sidepanel approval by default.
-- **Sidepanel Settings & History Viewer**: Configure the backend URL and optional auth token from the extension UI, then inspect recent persisted sessions without leaving the sidepanel.
+- **Sidepanel Settings & History Viewer**: Configure the backend URL and optional auth token from the extension UI, inspect recent persisted sessions, and clear local history without leaving the sidepanel.
+- **Sensitive Value Redaction**: Credential-like input values are redacted before browser actions are written to local history.
 - **Optional Local Auth**: Set `AGENT_AUTH_TOKEN` to protect the WebSocket and session history endpoints on shared machines.
 
 ---
@@ -118,10 +119,12 @@ The current extension defaults wait about `900ms` after tab-level navigation and
 
 ## 🗄️ Session History
 
-Every WebSocket connection is logged as a session in `backend/agent_history.db` (SQLite, created automatically on first run, or `AGENT_DB_PATH` if set). Two read-only endpoints expose it:
+Every WebSocket connection is logged as a session in `backend/agent_history.db` (SQLite, created automatically on first run, or `AGENT_DB_PATH` if set). Sensitive input values are redacted before they are written to the action log. These endpoints expose and manage local history:
 
 - `GET /sessions?limit=20&offset=0` — lists sessions with pagination metadata.
 - `GET /sessions/{session_id}` — returns the full list of chat messages and browser actions recorded for that session.
+- `DELETE /sessions/{session_id}` — deletes one recorded session.
+- `DELETE /sessions` — clears all recorded session history.
 
 If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings.
 

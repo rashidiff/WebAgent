@@ -24,6 +24,7 @@ const backendUrlInput = document.getElementById('backend-url-input');
 const authTokenInput = document.getElementById('auth-token-input');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnHistory = document.getElementById('btn-history');
+const btnClearHistory = document.getElementById('btn-clear-history');
 const historyList = document.getElementById('history-list');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
@@ -195,6 +196,20 @@ async function loadSessionHistory() {
     }
   } catch (err) {
     historyList.textContent = `History error: ${err.message}`;
+  }
+}
+
+async function clearSessionHistory() {
+  historyList.classList.remove("hidden");
+  historyList.textContent = "Clearing history...";
+
+  try {
+    const response = await fetch(`${backendUrl}/sessions`, { method: "DELETE", ...authFetchOptions() });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    historyList.textContent = `Deleted ${payload.deleted || 0} recorded session(s).`;
+  } catch (err) {
+    historyList.textContent = `Clear history error: ${err.message}`;
   }
 }
 
@@ -610,6 +625,7 @@ btnSettings.addEventListener('click', () => {
 });
 btnSaveSettings.addEventListener('click', saveSettings);
 btnHistory.addEventListener('click', loadSessionHistory);
+btnClearHistory.addEventListener('click', clearSessionHistory);
 
 // Initialize Connection on Load
 loadSettings().then(connectWS);

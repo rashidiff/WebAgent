@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from backend.agent import SessionCoordinator, run_browser_agent
-from backend.database import count_sessions, get_session_history, init_db, list_sessions
+from backend.database import clear_sessions, count_sessions, delete_session, get_session_history, init_db, list_sessions
 from backend.schemas import ActionResultEvent, SessionHistoryResponse, SessionListResponse, UserInputEvent
 from backend.settings import get_settings
 
@@ -170,6 +170,24 @@ async def get_session(session_id: str, request: Request):
     if not history["messages"] and not history["actions"]:
         raise HTTPException(status_code=404, detail="Session not found or has no recorded history.")
     return history
+
+
+@app.delete("/sessions")
+async def delete_all_sessions(request: Request):
+    """Deletes all locally recorded session history."""
+    require_http_auth(request)
+    deleted = await asyncio.to_thread(clear_sessions)
+    return {"deleted": deleted}
+
+
+@app.delete("/sessions/{session_id}")
+async def delete_recorded_session(session_id: str, request: Request):
+    """Deletes one locally recorded session and its messages/actions."""
+    require_http_auth(request)
+    deleted = await asyncio.to_thread(delete_session, session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    return {"deleted": 1}
 
 
 if __name__ == "__main__":
