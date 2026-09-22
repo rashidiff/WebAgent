@@ -16,9 +16,12 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 - **Persistent History**: Every chat message and browser action is logged to a local SQLite database (`backend/agent_history.db`), retrievable via `GET /sessions` and `GET /sessions/{id}`.
 - **Context-Aware Agent Loop**: Caps the number of DOM elements sent per step, collapses older DOM snapshots to keep context size bounded across long tasks, and remembers a short summary of prior tasks completed in the same session.
 - **Step-Budgeted Execution**: `MAX_AGENT_STEPS` limits executed browser actions, not just model reasoning turns, so multi-action runs stop at a predictable budget.
-- **Expanded Browser Tools**: Supports navigation, keyboard events, select controls, hover menus, browser history, reload, wait steps, and visible page-text reads in addition to click/input/scroll.
-- **Human Approval Guard**: Sensitive actions such as submit, send, delete, checkout, payment, and credential-like input require explicit sidepanel approval by default.
-- **Sidepanel Settings & History Viewer**: Configure the backend URL and optional auth token from the extension UI, inspect recent persisted sessions, and clear local history without leaving the sidepanel.
+- **Replay & Screenshot Grounding**: Every agent run gets a durable replay timeline with plan/action/verify/self-check events, DOM summaries, and before/after screenshots exportable as Markdown or HTML.
+- **Expanded Browser Tools**: Supports navigation, keyboard events, select controls, hover menus, browser history, reload, wait steps, visible page-text reads, clear/double-click/toggle, wait-for-text, modal/download detection, paste, and basic drag/drop.
+- **Risk-Based Approval Guard**: Browser actions are classified as `read_only`, `low`, `medium`, `high`, or `critical`; high-risk actions such as submit, delete, checkout, payment, credential-like input, and account changes require explicit sidepanel approval by default.
+- **Workflow Library**: Save successful replays as lightweight reusable workflows, reload them into the prompt box, and adjust parameters before running again.
+- **Sidepanel Replay, Workflow & History Viewer**: Configure the backend URL and optional auth token, inspect sessions/replays/workflows, search local records, export replays, and clear local history without leaving the sidepanel.
+- **Local Evaluation Suite**: Ships with mock form, shop, table, modal, and fake-login pages plus a smoke-test runner that emits JSON/Markdown-ready benchmark summaries.
 - **Sensitive Value Redaction**: Credential-like input values are redacted before browser actions are written to local history.
 - **Optional Local Auth**: Set `AGENT_AUTH_TOKEN` to protect the WebSocket and session history endpoints on shared machines.
 
@@ -36,12 +39,14 @@ browser-agent/
 │   ├── background.js      # Service worker configuring side panel behavior
 │   └── content.js         # Page script for DOM parsing & event dispatching
 │
-└── backend/               # FastAPI Backend (LangChain Brain)
+├── backend/               # FastAPI Backend (LangChain Brain)
     ├── main.py            # WebSocket server endpoint, routing & history API
     ├── agent.py           # LangChain tool binding & Custom Agent Loop
     ├── database.py        # SQLite persistence for sessions/messages/actions
+    ├── evaluation.py      # Local mock-page evaluation smoke runner
     ├── requirements.txt   # Python package dependencies
     └── .env.example       # Template for required environment variables
+└── evals/mock_pages/      # Static benchmark pages for local evaluation
 ```
 
 ---
@@ -119,22 +124,45 @@ The current extension defaults wait about `900ms` after tab-level navigation and
 
 ## 🗄️ Session History
 
-Every WebSocket connection is logged as a session in `backend/agent_history.db` (SQLite, created automatically on first run, or `AGENT_DB_PATH` if set). Sensitive input values are redacted before they are written to the action log. These endpoints expose and manage local history:
+Every WebSocket connection is logged as a session in `backend/agent_history.db` (SQLite, created automatically on first run, or `AGENT_DB_PATH` if set). Sensitive input values are redacted before they are written to the action log. Replays, workflows, and eval results are stored in the same local database.
 
 - `GET /sessions?limit=20&offset=0` — lists sessions with pagination metadata.
 - `GET /sessions/{session_id}` — returns the full list of chat messages and browser actions recorded for that session.
 - `DELETE /sessions/{session_id}` — deletes one recorded session.
 - `DELETE /sessions` — clears all recorded session history.
+- `GET /runs` / `GET /runs/{run_id}` — lists and opens replay timelines.
+- `GET /runs/{run_id}/export?format=html|markdown` — exports a replay for sharing or debugging.
+- `GET /workflows` / `POST /workflows` / `POST /workflows/{id}/run` / `DELETE /workflows/{id}` — manages saved workflow templates.
+- `POST /evals/run` / `GET /evals` — runs and lists local evaluation smoke results.
 
 If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings.
+
+---
+
+## 🧪 Local Evaluation
+
+Run the built-in smoke suite against static mock pages:
+
+```bash
+python -m backend.evaluation
+```
+
+Optional machine-readable outputs:
+
+```bash
+python -m backend.evaluation --json eval-results.json --markdown eval-summary.md
+```
+
+The V1 suite validates that the demo pages used for form filling, cart actions, table search, modal detection, and credential-field safety contain the expected markers. It is intentionally lightweight so it can run in CI and act as a foundation for future end-to-end browser-agent benchmarks.
 
 ---
 
 ## ✅ Development Checks
 
 ```bash
-python -m py_compile backend/main.py backend/agent.py backend/database.py backend/settings.py backend/schemas.py
+python -m py_compile backend/main.py backend/agent.py backend/database.py backend/settings.py backend/schemas.py backend/evaluation.py
 python -m unittest discover backend/tests
+python -m backend.evaluation
 node --check extension/content.js
 node --check extension/sidepanel.js
 ```

@@ -26,10 +26,13 @@ jobs:
         run: python -m pip install -r backend/requirements.txt -c backend/constraints.txt
 
       - name: Compile backend
-        run: python -m py_compile backend/main.py backend/agent.py backend/database.py backend/settings.py backend/schemas.py
+        run: python -m py_compile backend/main.py backend/agent.py backend/database.py backend/settings.py backend/schemas.py backend/evaluation.py
 
       - name: Run backend tests
         run: python -m unittest discover backend/tests
+
+      - name: Run evaluation smoke suite
+        run: python -m backend.evaluation
 
       - name: Check extension syntax
         run: |
