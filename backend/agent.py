@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
 from backend.database import HistoryStore
+from backend.database import add_run_step, create_run, update_run_status
 from backend.schemas import AgentActionEvent, AgentStatusEvent
 from backend.settings import get_settings
 
@@ -22,6 +23,7 @@ SENSITIVE_ACTION_KEYWORDS = [
     "submit", "send", "buy", "purchase", "pay", "checkout", "order", "delete", "remove",
     "confirm", "transfer", "withdraw", "sign", "agree", "accept", "place order", "book",
 ]
+RISK_APPROVAL_LEVELS = {"high", "critical"}
 logger = logging.getLogger("browser_agent.agent")
 
 # Factory function to obtain the configured Chat LLM
@@ -118,6 +120,7 @@ class SessionCoordinator:
         self.successful_actions: List[str] = []
         self.current_goal = ""
         self.current_run_id = ""
+        self.current_plan = ""
 
     def record_turn(self, user_prompt: str, outcome: str) -> None:
         """Remembers a short summary of a completed task so follow-up prompts in the
@@ -135,6 +138,21 @@ class SessionCoordinator:
                 AgentStatusEvent(type="agent_status", message=message).model_dump()
             )
 
+    async def log_run_step(self, event_type: str, title: str, detail: str = "", **kwargs) -> None:
+        if not self.current_run_id:
+            return
+        page_text = self.last_page_text or {}
+        await asyncio.to_thread(
+            add_run_step,
+            self.current_run_id,
+            event_type,
+            title,
+            detail,
+            url=kwargs.pop("url", page_text.get("url")),
+            page_title=kwargs.pop("page_title", page_text.get("title")),
+            **kwargs,
+        )
+
     async def execute_action(self, action: str, selector: str = None, value: str = None) -> str:
         """Sends action to Chrome Extension, pauses execution, and waits for updated DOM tree."""
         if not self.is_running:
@@ -144,6 +162,7 @@ class SessionCoordinator:
         while not self.response_queue.empty():
             self.response_queue.get_nowait()
             
+        risk = self.classify_action_risk(action, selector, value)
         approval_reason = self.get_approval_reason(action, selector, value)
         expected_fingerprint = self.get_expected_fingerprint(selector)
         action_id = str(uuid.uuid4())
@@ -160,6 +179,8 @@ class SessionCoordinator:
                 expected_fingerprint=expected_fingerprint,
                 requires_approval=bool(approval_reason),
                 approval_reason=approval_reason,
+                risk_level=risk["risk_level"],
+                target_summary=risk["target_summary"],
             ).model_dump()
         )
         
@@ -173,6 +194,16 @@ class SessionCoordinator:
                 await self.history.log_action(action, selector, self.redact_action_value(action, selector, value), status="success")
                 self.successful_actions.append(f"{action}({selector or value or 'page'})")
                 self.successful_actions = self.successful_actions[-20:]
+                await self.log_run_step(
+                    "ACTION",
+                    f"{action} succeeded",
+                    f"Executed {action} on {selector or 'page'}.",
+                    action=action,
+                    selector=selector,
+                    value=self.redact_action_value(action, selector, value),
+                    dom_summary=self.summarize_dom(self.current_dom),
+                    metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"]},
+                )
                 result = f"Success: Action executed. Current webpage interactive elements:\n{self.format_dom_for_llm(self.current_dom)}"
                 if action == "get_text" and self.last_page_text:
                     result += f"\n\nCurrent page text:\n{self.format_page_text_for_llm(self.last_page_text)}"
@@ -180,9 +211,29 @@ class SessionCoordinator:
             else:
                 err = response.get("error", "Unknown client error")
                 await self.history.log_action(action, selector, self.redact_action_value(action, selector, value), status="error", detail=err)
+                await self.log_run_step(
+                    "ERROR",
+                    f"{action} failed",
+                    err,
+                    action=action,
+                    selector=selector,
+                    value=self.redact_action_value(action, selector, value),
+                    dom_summary=self.summarize_dom(self.current_dom),
+                    metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"]},
+                )
                 return f"Error: Action failed: {err}. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
         except asyncio.TimeoutError:
             await self.history.log_action(action, selector, self.redact_action_value(action, selector, value), status="timeout")
+            await self.log_run_step(
+                "ERROR",
+                f"{action} timed out",
+                "Browser timed out waiting for action response.",
+                action=action,
+                selector=selector,
+                value=self.redact_action_value(action, selector, value),
+                dom_summary=self.summarize_dom(self.current_dom),
+                metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"]},
+            )
             return f"Error: Browser timed out waiting for action response. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
 
     async def wait_for_action_response(self, action_id: str) -> Dict[str, Any]:
@@ -209,8 +260,14 @@ class SessionCoordinator:
         if not REQUIRE_ACTION_APPROVAL:
             return ""
 
-        if action in {"navigate", "back", "forward", "reload", "scroll", "hover", "wait", "get_text", "key"}:
+        risk = self.classify_action_risk(action, selector, value)
+        if risk["risk_level"] not in RISK_APPROVAL_LEVELS:
             return ""
+        return f"{risk['risk_level'].upper()} risk browser action requires approval: {risk['target_summary']}"
+
+    def classify_action_risk(self, action: str, selector: str = None, value: str = None) -> Dict[str, str]:
+        if action in {"navigate", "back", "forward", "reload", "scroll", "hover", "wait", "get_text", "key"}:
+            return {"risk_level": "read_only", "target_summary": f"{action} on page"}
 
         element = self.get_element_for_selector(selector)
         element_text = " ".join(
@@ -220,14 +277,39 @@ class SessionCoordinator:
         value_text = str(value or "").lower()
         combined = f"{action} {element_text} {value_text}"
 
-        if any(keyword in combined for keyword in SENSITIVE_ACTION_KEYWORDS):
-            return f"Sensitive browser action requires approval: {action} on {selector or 'page'}"
-
         input_type = str(element.get("type") or "").lower()
-        if action == "input" and input_type in {"password", "email", "tel", "number"}:
-            return f"Sensitive input field requires approval: {input_type}"
+        target_summary = self.summarize_action_target(action, selector, value, element)
 
-        return ""
+        critical_terms = {"pay", "payment", "checkout", "transfer", "withdraw", "place order", "buy", "purchase"}
+        high_terms = {"submit", "send", "delete", "remove", "confirm", "sign", "agree", "accept", "book", "order"}
+        credential_terms = {"password", "passcode", "token", "secret", "api key", "credit card", "card number", "cvv", "ssn"}
+
+        if any(term in combined for term in critical_terms):
+            return {"risk_level": "critical", "target_summary": target_summary}
+        if action == "input" and (input_type in {"password"} or any(term in element_text for term in credential_terms)):
+            return {"risk_level": "critical", "target_summary": target_summary}
+        if any(keyword in combined for keyword in high_terms):
+            return {"risk_level": "high", "target_summary": target_summary}
+        if action == "input" and input_type in {"email", "tel", "number"}:
+            return {"risk_level": "high", "target_summary": target_summary}
+        if action in {"click", "select", "input"}:
+            return {"risk_level": "low", "target_summary": target_summary}
+
+        return {"risk_level": "medium", "target_summary": target_summary}
+
+    def summarize_action_target(self, action: str, selector: str = None, value: str = None, element: Dict[str, Any] | None = None) -> str:
+        element = element or self.get_element_for_selector(selector)
+        label = next(
+            (
+                str(element.get(key))
+                for key in ["text", "label", "ariaLabel", "title", "name", "placeholder", "href"]
+                if element.get(key)
+            ),
+            selector or "page",
+        )
+        if action == "input" and value:
+            return f"{action} into {label}"
+        return f"{action} on {label}"
 
     def get_element_for_selector(self, selector: str = None) -> Dict[str, Any]:
         if not selector:
@@ -321,6 +403,17 @@ class SessionCoordinator:
             lines.append(f"[... truncated to first {self.MAX_DOM_ELEMENTS} elements; scroll to reveal more ...]")
 
         return "\n".join(lines)
+
+    def summarize_dom(self, dom: List[Dict[str, Any]], limit: int = 8) -> str:
+        if not dom:
+            return "[No interactive elements]"
+        parts = []
+        for el in dom[:limit]:
+            label = el.get("text") or el.get("label") or el.get("ariaLabel") or el.get("placeholder") or el.get("href") or el.get("selector")
+            parts.append(f"{el.get('id')}:<{el.get('tagName')}> {label}")
+        if len(dom) > limit:
+            parts.append(f"... {len(dom) - limit} more")
+        return "\n".join(parts)
 
     def rank_dom_for_goal(self, dom: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         goal_terms = {
@@ -442,6 +535,25 @@ def tool_signature(tool_name: str, tool_args: Dict[str, Any]) -> str:
     return f"{tool_name}:{normalized}"
 
 
+def build_initial_plan(user_prompt: str, dom_count: int) -> str:
+    return "\n".join([
+        "1. Inspect the current page state and identify the most relevant controls.",
+        "2. Execute the smallest browser action that moves toward the user's goal.",
+        "3. Verify the updated page state after each action and adapt if needed.",
+        f"4. Stop with SUCCESS or ERROR once the goal is resolved. Initial DOM elements: {dom_count}.",
+    ])
+
+
+def build_self_check(user_prompt: str, executed_steps: int, successful_actions: List[str]) -> str:
+    recent = "; ".join(successful_actions[-3:]) or "no successful browser actions yet"
+    return (
+        f"Goal: {user_prompt[:160]}\n"
+        f"Executed steps: {executed_steps}\n"
+        f"Verified progress from recent actions: {recent}\n"
+        "Next check: continue only if the updated DOM still supports the plan."
+    )
+
+
 SYSTEM_PROMPT = """You are a highly capable Browser AI Agent. Your goal is to help the user complete their tasks on the active browser tab.
 You will be provided with the user's prompt and a serialized structure of the webpage's interactive elements (DOM state).
 
@@ -480,7 +592,17 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
         coordinator.current_run_id = str(uuid.uuid4())
         coordinator.current_goal = user_prompt
         coordinator.current_dom = initial_dom
+        coordinator.current_plan = build_initial_plan(user_prompt, len(initial_dom))
         await coordinator.history.log_message("user", user_prompt)
+        await asyncio.to_thread(
+            create_run,
+            coordinator.current_run_id,
+            user_prompt,
+            coordinator.history.session_id,
+            "running",
+            coordinator.current_plan,
+        )
+        await coordinator.log_run_step("PLAN", "Initial execution plan", coordinator.current_plan, dom_summary=coordinator.summarize_dom(initial_dom))
         llm = get_llm()
         tools = create_agent_tools(coordinator)
         
@@ -510,7 +632,7 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
         executed_steps = 0
         failed_tool_signatures = set()
         
-        await coordinator.send_status("Agent thinking and planning first action...")
+        await coordinator.send_status(f"PLAN: {coordinator.current_plan}")
         
         while coordinator.is_running:
             model_turn += 1
@@ -566,6 +688,11 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
 
                     if tool_result.startswith("Error:"):
                         failed_tool_signatures.add(signature)
+
+                    if executed_steps % 3 == 0:
+                        self_check = build_self_check(user_prompt, executed_steps, coordinator.successful_actions)
+                        await coordinator.log_run_step("SELF_CHECK", "Progress self-check", self_check)
+                        await coordinator.send_status(f"SELF_CHECK: {self_check}")
                 
                 await coordinator.send_status("VERIFY: Action completed. Analyzing updated page state...")
             else:
@@ -578,6 +705,18 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
 
                 await coordinator.history.log_message("assistant", output)
                 coordinator.record_turn(user_prompt, output)
+                await coordinator.log_run_step(
+                    "DONE" if output.startswith("SUCCESS:") else "ERROR" if output.startswith("ERROR:") else "DONE",
+                    "Agent final response",
+                    output,
+                    dom_summary=coordinator.summarize_dom(coordinator.current_dom),
+                )
+                await asyncio.to_thread(
+                    update_run_status,
+                    coordinator.current_run_id,
+                    "success" if output.startswith("SUCCESS:") else "error" if output.startswith("ERROR:") else "finished",
+                    coordinator.current_plan,
+                )
                 await coordinator.send_status(output)
                 return
 
@@ -586,12 +725,17 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
         cancel_msg = "ERROR: Agent execution stopped by user command."
         await coordinator.history.log_message("assistant", cancel_msg)
         coordinator.record_turn(user_prompt, cancel_msg)
+        await coordinator.log_run_step("ERROR", "Agent stopped", cancel_msg)
+        await asyncio.to_thread(update_run_status, coordinator.current_run_id, "cancelled", coordinator.current_plan)
         await coordinator.send_status(cancel_msg)
     except Exception as e:
         error_msg = f"ERROR: Execution failed: {str(e)}"
         logger.exception(error_msg)
         await coordinator.history.log_message("assistant", error_msg)
         coordinator.record_turn(user_prompt, error_msg)
+        await coordinator.log_run_step("ERROR", "Agent execution failed", error_msg)
+        if coordinator.current_run_id:
+            await asyncio.to_thread(update_run_status, coordinator.current_run_id, "error", coordinator.current_plan)
         await coordinator.send_status(error_msg)
     finally:
         coordinator.is_running = False

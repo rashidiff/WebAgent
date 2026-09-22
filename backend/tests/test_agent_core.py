@@ -47,7 +47,22 @@ class AgentCoreTests(unittest.TestCase):
 
         reason = coordinator.get_approval_reason("click", "[data-agent-id=\"2\"]")
 
-        self.assertIn("Sensitive browser action", reason)
+        self.assertIn("HIGH risk browser action", reason)
+
+    def test_risk_classification_marks_payment_as_critical(self):
+        coordinator = SessionCoordinator(websocket=None)
+        coordinator.current_dom = [
+            {
+                "selector": "[data-agent-id=\"4\"]",
+                "text": "Checkout and pay",
+                "tagName": "BUTTON",
+            }
+        ]
+
+        risk = coordinator.classify_action_risk("click", "[data-agent-id=\"4\"]")
+
+        self.assertEqual(risk["risk_level"], "critical")
+        self.assertIn("Checkout", risk["target_summary"])
 
     def test_sensitive_input_value_is_redacted_for_history(self):
         coordinator = SessionCoordinator(websocket=None)
@@ -95,8 +110,12 @@ class AgentCoreTests(unittest.TestCase):
         async def fake_log_action(action, selector, value, status, detail=""):
             return None
 
+        async def fake_log_run_step(*args, **kwargs):
+            return None
+
         coordinator.websocket = FakeWebSocket()
         coordinator.history.log_action = fake_log_action
+        coordinator.log_run_step = fake_log_run_step
 
         async def run():
             async def feed_results():
@@ -151,7 +170,11 @@ class AgentCoreTests(unittest.TestCase):
                 return AIMessage(content="SUCCESS: Task completed immediately.")
 
         async def run():
-            with patch.object(agent, "get_llm", return_value=FakeLLM()), patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 1):
+            with patch.object(agent, "get_llm", return_value=FakeLLM()), \
+                patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 1), \
+                patch.object(agent, "create_run", return_value={}), \
+                patch.object(agent, "add_run_step", return_value={}), \
+                patch.object(agent, "update_run_status", return_value=True):
                 await agent.run_browser_agent(coordinator, "done", [])
 
         asyncio.run(run())
@@ -203,7 +226,11 @@ class AgentCoreTests(unittest.TestCase):
                 return self.responses.pop(0)
 
         async def run():
-            with patch.object(agent, "get_llm", return_value=FakeLLM()), patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 2):
+            with patch.object(agent, "get_llm", return_value=FakeLLM()), \
+                patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 2), \
+                patch.object(agent, "create_run", return_value={}), \
+                patch.object(agent, "add_run_step", return_value={}), \
+                patch.object(agent, "update_run_status", return_value=True):
                 await agent.run_browser_agent(coordinator, "two actions", [])
 
         asyncio.run(run())
@@ -247,7 +274,11 @@ class AgentCoreTests(unittest.TestCase):
                 return repeated_tool_response
 
         async def run():
-            with patch.object(agent, "get_llm", return_value=FakeLLM()), patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 1):
+            with patch.object(agent, "get_llm", return_value=FakeLLM()), \
+                patch.object(agent, "DEFAULT_MAX_AGENT_STEPS", 1), \
+                patch.object(agent, "create_run", return_value={}), \
+                patch.object(agent, "add_run_step", return_value={}), \
+                patch.object(agent, "update_run_status", return_value=True):
                 await agent.run_browser_agent(coordinator, "limit", [])
 
         asyncio.run(run())
