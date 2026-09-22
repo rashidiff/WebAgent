@@ -465,7 +465,13 @@ class HistoryApiTests(unittest.TestCase):
             database.DB_PATH = os.path.join(tmp, "history.db")
             database.init_db()
             database.create_run("run-api", "browse demo", status="success", plan="Plan text")
-            database.add_run_step("run-api", "PLAN", "Planned task", detail="Plan text")
+            database.add_run_step(
+                "run-api",
+                "PLAN",
+                "Planned task",
+                detail="Plan text",
+                screenshot_after="data:image/jpeg;base64,demo",
+            )
 
             with TestClient(app) as client:
                 list_response = client.get("/runs")
@@ -479,6 +485,10 @@ class HistoryApiTests(unittest.TestCase):
                 export_response = client.get("/runs/run-api/export?format=markdown")
                 self.assertEqual(export_response.status_code, 200)
                 self.assertIn("# WebAgent Replay: run-api", export_response.text)
+
+                html_export = client.get("/runs/run-api/export?format=html")
+                self.assertEqual(html_export.status_code, 200)
+                self.assertIn("data:image/jpeg;base64,demo", html_export.text)
 
     def test_workflow_endpoints_create_list_delete(self):
         with tempfile.TemporaryDirectory() as tmp:

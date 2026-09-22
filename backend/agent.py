@@ -202,6 +202,8 @@ class SessionCoordinator:
                     selector=selector,
                     value=self.redact_action_value(action, selector, value),
                     dom_summary=self.summarize_dom(self.current_dom),
+                    screenshot_before=response.get("screenshot_before"),
+                    screenshot_after=response.get("screenshot_after"),
                     metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"]},
                 )
                 result = f"Success: Action executed. Current webpage interactive elements:\n{self.format_dom_for_llm(self.current_dom)}"
@@ -219,6 +221,8 @@ class SessionCoordinator:
                     selector=selector,
                     value=self.redact_action_value(action, selector, value),
                     dom_summary=self.summarize_dom(self.current_dom),
+                    screenshot_before=response.get("screenshot_before"),
+                    screenshot_after=response.get("screenshot_after"),
                     metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"]},
                 )
                 return f"Error: Action failed: {err}. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"

@@ -230,7 +230,9 @@ function authFetchOptions() {
 }
 
 function requestActionApproval(data) {
-  approvalText.textContent = `${data.approval_reason || "Sensitive action"} (${data.action}${data.selector ? `: ${data.selector}` : ""})`;
+  const risk = data.risk_level ? data.risk_level.toUpperCase() : "UNKNOWN";
+  const target = data.target_summary || `${data.action}${data.selector ? `: ${data.selector}` : ""}`;
+  approvalText.textContent = `${risk}: ${data.approval_reason || "Sensitive action"} — ${target}`;
   approvalPanel.classList.remove("hidden");
   updateLog("Waiting for user approval...");
 
@@ -254,24 +256,49 @@ function requestActionApproval(data) {
 }
 
 async function executeAgentAction(tab, data) {
+  const screenshotBefore = await captureVisibleScreenshot();
+  let response = null;
+
   if (TAB_LEVEL_ACTIONS.has(data.action)) {
     const navigationWait = waitForTabToSettle(tab.id);
     await executeTabAction(tab.id, data.action, data.value);
     await navigationWait;
     await injectContentScript(tab.id);
-    return await sendMessageToTab(tab.id, { type: 'get_dom' });
+    response = await sendMessageToTab(tab.id, { type: 'get_dom' });
+  } else if (data.action === "get_text") {
+    response = await sendMessageToTab(tab.id, { type: 'get_page_text' });
+  } else {
+    response = await sendMessageToTab(tab.id, {
+      type: 'execute_action',
+      action: data.action,
+      selector: data.selector,
+      value: data.value,
+      expected_fingerprint: data.expected_fingerprint || ""
+    });
   }
 
-  if (data.action === "get_text") {
-    return await sendMessageToTab(tab.id, { type: 'get_page_text' });
-  }
+  const screenshotAfter = await captureVisibleScreenshot();
+  return {
+    ...(response || {}),
+    screenshot_before: screenshotBefore,
+    screenshot_after: screenshotAfter
+  };
+}
 
-  return await sendMessageToTab(tab.id, {
-    type: 'execute_action',
-    action: data.action,
-    selector: data.selector,
-    value: data.value,
-    expected_fingerprint: data.expected_fingerprint || ""
+function captureVisibleScreenshot() {
+  return new Promise((resolve) => {
+    if (!chrome.tabs || typeof chrome.tabs.captureVisibleTab !== "function") {
+      resolve(null);
+      return;
+    }
+    chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 55 }, (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        console.warn("Screenshot capture failed:", chrome.runtime.lastError.message);
+        resolve(null);
+      } else {
+        resolve(dataUrl || null);
+      }
+    });
   });
 }
 

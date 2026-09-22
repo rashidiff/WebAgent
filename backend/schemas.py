@@ -63,6 +63,8 @@ class ActionResultEvent(BaseModel):
     action_id: str | None = None
     dom_tree: list[InteractiveDomElement] = Field(default_factory=list)
     page_text: PageTextPayload | None = None
+    screenshot_before: str | None = None
+    screenshot_after: str | None = None
     error: str | None = None
 
 

@@ -108,6 +108,8 @@ def render_run_markdown(run: dict) -> str:
             lines.append(f"  {step['detail']}")
         if step.get("url"):
             lines.append(f"  URL: {step['url']}")
+        if step.get("screenshot_after"):
+            lines.append("  Screenshot: available in HTML export")
     lines.append("")
     return "\n".join(lines)
 
@@ -122,15 +124,20 @@ def render_run_html(run: dict) -> str:
             .replace('"', "&quot;")
         )
 
-    steps = "\n".join(
-        "<article class='step'>"
-        f"<h2>Step {step['step_index']} <span>{esc(step['event_type'])}</span></h2>"
-        f"<p><strong>{esc(step['title'])}</strong></p>"
-        f"<p>{esc(step.get('detail'))}</p>"
-        f"<p class='url'>{esc(step.get('url'))}</p>"
-        "</article>"
-        for step in run.get("steps", [])
-    )
+    step_html = []
+    for step in run.get("steps", []):
+        before = f"<figure><figcaption>Before</figcaption><img src='{esc(step.get('screenshot_before'))}'></figure>" if step.get("screenshot_before") else ""
+        after = f"<figure><figcaption>After</figcaption><img src='{esc(step.get('screenshot_after'))}'></figure>" if step.get("screenshot_after") else ""
+        step_html.append(
+            "<article class='step'>"
+            f"<h2>Step {step['step_index']} <span>{esc(step['event_type'])}</span></h2>"
+            f"<p><strong>{esc(step['title'])}</strong></p>"
+            f"<p>{esc(step.get('detail'))}</p>"
+            f"<p class='url'>{esc(step.get('url'))}</p>"
+            f"<div class='shots'>{before}{after}</div>"
+            "</article>"
+        )
+    steps = "\n".join(step_html)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -142,6 +149,10 @@ def render_run_html(run: dict) -> str:
     h1, h2 {{ margin: 0 0 8px; }}
     h2 span {{ color: #9fbff7; font-size: 0.75em; text-transform: uppercase; }}
     .url {{ color: #9aa3af; word-break: break-all; }}
+    .shots {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }}
+    figure {{ margin: 0; }}
+    figcaption {{ color: #9fbff7; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; }}
+    img {{ width: 100%; border: 1px solid #30343b; border-radius: 6px; }}
   </style>
 </head>
 <body>
