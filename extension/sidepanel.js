@@ -24,8 +24,13 @@ const backendUrlInput = document.getElementById('backend-url-input');
 const authTokenInput = document.getElementById('auth-token-input');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnHistory = document.getElementById('btn-history');
+const btnRuns = document.getElementById('btn-runs');
+const btnWorkflows = document.getElementById('btn-workflows');
 const btnClearHistory = document.getElementById('btn-clear-history');
 const historyList = document.getElementById('history-list');
+const replayList = document.getElementById('replay-list');
+const workflowList = document.getElementById('workflow-list');
+const historySearchInput = document.getElementById('history-search-input');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
 const NAVIGATION_SETTLE_DELAY_MS = 900;
@@ -164,6 +169,8 @@ async function saveSettings() {
 
 async function loadSessionHistory() {
   historyList.classList.remove("hidden");
+  replayList.classList.add("hidden");
+  workflowList.classList.add("hidden");
   historyList.textContent = "Loading history...";
 
   try {
@@ -179,6 +186,7 @@ async function loadSessionHistory() {
     }
 
     for (const session of sessions) {
+      if (!matchesFilter(`${session.id} ${session.started_at} ${session.ended_at || ""}`)) continue;
       const row = document.createElement("div");
       row.className = "history-item";
       const meta = document.createElement("div");
@@ -197,6 +205,163 @@ async function loadSessionHistory() {
   } catch (err) {
     historyList.textContent = `History error: ${err.message}`;
   }
+}
+
+async function loadRunReplays() {
+  replayList.classList.remove("hidden");
+  historyList.classList.add("hidden");
+  workflowList.classList.add("hidden");
+  replayList.textContent = "Loading replays...";
+
+  try {
+    const response = await fetch(`${backendUrl}/runs?limit=${HISTORY_PAGE_SIZE}&offset=0`, authFetchOptions());
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const runs = payload.runs || [];
+    replayList.innerHTML = "";
+
+    if (!runs.length) {
+      replayList.textContent = "No replays recorded yet.";
+      return;
+    }
+
+    for (const run of runs) {
+      if (!matchesFilter(`${run.id} ${run.prompt} ${run.status}`)) continue;
+      const row = document.createElement("div");
+      row.className = "history-item";
+      const meta = document.createElement("div");
+      meta.className = "history-meta";
+      meta.title = run.prompt;
+      meta.textContent = `${run.status} · ${new Date(run.started_at).toLocaleString()} · ${run.prompt}`;
+      const openButton = document.createElement("button");
+      openButton.className = "history-action";
+      openButton.type = "button";
+      openButton.textContent = "Open";
+      openButton.addEventListener("click", () => openRunReplay(run.id));
+      const saveButton = document.createElement("button");
+      saveButton.className = "history-action";
+      saveButton.type = "button";
+      saveButton.textContent = "Flow";
+      saveButton.addEventListener("click", () => saveWorkflowFromRun(run.id));
+      row.appendChild(meta);
+      row.appendChild(openButton);
+      row.appendChild(saveButton);
+      replayList.appendChild(row);
+    }
+  } catch (err) {
+    replayList.textContent = `Replay error: ${err.message}`;
+  }
+}
+
+async function openRunReplay(runId) {
+  try {
+    const response = await fetch(`${backendUrl}/runs/${encodeURIComponent(runId)}`, authFetchOptions());
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const run = await response.json();
+    const steps = (run.steps || []).map((step) => `- **${step.event_type}**: ${step.title}`).join("\n");
+    appendMessage("assistant", `Replay ${run.id}\n\n**Prompt:** ${run.prompt}\n\n${steps}`);
+    window.open(`${backendUrl}/runs/${encodeURIComponent(runId)}/export?format=html${authToken ? `&token=${encodeURIComponent(authToken)}` : ""}`, "_blank");
+  } catch (err) {
+    appendMessage("assistant", `Error loading replay: ${err.message}`);
+  }
+}
+
+async function saveWorkflowFromRun(runId) {
+  try {
+    const response = await fetch(`${backendUrl}/runs/${encodeURIComponent(runId)}`, authFetchOptions());
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const run = await response.json();
+    const workflowResponse = await fetch(`${backendUrl}/workflows`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(authToken ? { "X-Agent-Token": authToken } : {}) },
+      body: JSON.stringify({
+        name: run.prompt.slice(0, 80) || "Saved workflow",
+        prompt_template: run.prompt,
+        source_run_id: run.id,
+        steps: (run.steps || []).map((step) => ({ event_type: step.event_type, title: step.title, action: step.action }))
+      })
+    });
+    if (!workflowResponse.ok) throw new Error(`HTTP ${workflowResponse.status}`);
+    appendMessage("assistant", "Workflow saved from replay.");
+    await loadWorkflows();
+  } catch (err) {
+    appendMessage("assistant", `Error saving workflow: ${err.message}`);
+  }
+}
+
+async function loadWorkflows() {
+  workflowList.classList.remove("hidden");
+  historyList.classList.add("hidden");
+  replayList.classList.add("hidden");
+  workflowList.textContent = "Loading workflows...";
+
+  try {
+    const response = await fetch(`${backendUrl}/workflows`, authFetchOptions());
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    const workflows = payload.workflows || [];
+    workflowList.innerHTML = "";
+
+    if (!workflows.length) {
+      workflowList.textContent = "No workflows saved yet.";
+      return;
+    }
+
+    for (const workflow of workflows) {
+      if (!matchesFilter(`${workflow.name} ${workflow.prompt_template}`)) continue;
+      const row = document.createElement("div");
+      row.className = "history-item";
+      const meta = document.createElement("div");
+      meta.className = "history-meta";
+      meta.title = workflow.prompt_template;
+      meta.textContent = `${workflow.name} · ${workflow.prompt_template}`;
+      const runButton = document.createElement("button");
+      runButton.className = "history-action";
+      runButton.type = "button";
+      runButton.textContent = "Run";
+      runButton.addEventListener("click", () => prepareWorkflowRun(workflow.id));
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "history-action";
+      deleteButton.type = "button";
+      deleteButton.textContent = "Del";
+      deleteButton.addEventListener("click", () => deleteWorkflow(workflow.id));
+      row.appendChild(meta);
+      row.appendChild(runButton);
+      row.appendChild(deleteButton);
+      workflowList.appendChild(row);
+    }
+  } catch (err) {
+    workflowList.textContent = `Workflow error: ${err.message}`;
+  }
+}
+
+async function prepareWorkflowRun(workflowId) {
+  try {
+    const response = await fetch(`${backendUrl}/workflows/${encodeURIComponent(workflowId)}/run`, { method: "POST", ...authFetchOptions() });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    promptInput.value = payload.prompt || "";
+    promptInput.focus();
+    appendMessage("assistant", "Workflow loaded into the prompt box. Review it, adjust parameters if needed, then send.");
+  } catch (err) {
+    appendMessage("assistant", `Error preparing workflow: ${err.message}`);
+  }
+}
+
+async function deleteWorkflow(workflowId) {
+  try {
+    const response = await fetch(`${backendUrl}/workflows/${encodeURIComponent(workflowId)}`, { method: "DELETE", ...authFetchOptions() });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    await loadWorkflows();
+  } catch (err) {
+    appendMessage("assistant", `Error deleting workflow: ${err.message}`);
+  }
+}
+
+function matchesFilter(text) {
+  const needle = (historySearchInput.value || "").trim().toLowerCase();
+  if (!needle) return true;
+  return String(text || "").toLowerCase().includes(needle);
 }
 
 async function clearSessionHistory() {
@@ -658,7 +823,14 @@ btnSettings.addEventListener('click', () => {
 });
 btnSaveSettings.addEventListener('click', saveSettings);
 btnHistory.addEventListener('click', loadSessionHistory);
+btnRuns.addEventListener('click', loadRunReplays);
+btnWorkflows.addEventListener('click', loadWorkflows);
 btnClearHistory.addEventListener('click', clearSessionHistory);
+historySearchInput.addEventListener('input', () => {
+  if (!historyList.classList.contains("hidden")) loadSessionHistory();
+  if (!replayList.classList.contains("hidden")) loadRunReplays();
+  if (!workflowList.classList.contains("hidden")) loadWorkflows();
+});
 
 // Initialize Connection on Load
 loadSettings().then(connectWS);

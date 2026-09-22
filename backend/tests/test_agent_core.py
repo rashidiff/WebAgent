@@ -510,6 +510,10 @@ class HistoryApiTests(unittest.TestCase):
                 list_response = client.get("/workflows")
                 self.assertEqual(len(list_response.json()["workflows"]), 1)
 
+                run_response = client.post(f"/workflows/{workflow_id}/run")
+                self.assertEqual(run_response.status_code, 200)
+                self.assertEqual(run_response.json()["prompt"], "Do {{task}}")
+
                 delete_response = client.delete(f"/workflows/{workflow_id}")
                 self.assertEqual(delete_response.status_code, 200)
                 self.assertEqual(delete_response.json(), {"deleted": 1})

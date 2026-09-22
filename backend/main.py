@@ -17,6 +17,7 @@ from backend.database import (
     delete_workflow,
     get_run,
     get_session_history,
+    get_workflow,
     init_db,
     list_runs,
     list_sessions,
@@ -360,6 +361,19 @@ async def delete_recorded_workflow(workflow_id: str, request: Request):
     if not deleted:
         raise HTTPException(status_code=404, detail="Workflow not found.")
     return {"deleted": 1}
+
+
+@app.post("/workflows/{workflow_id}/run")
+async def prepare_workflow_run(workflow_id: str, request: Request):
+    require_http_auth(request)
+    workflow = await asyncio.to_thread(get_workflow, workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found.")
+    return {
+        "workflow_id": workflow_id,
+        "prompt": workflow["prompt_template"],
+        "steps": workflow["steps"],
+    }
 
 
 if __name__ == "__main__":

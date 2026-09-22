@@ -134,7 +134,7 @@ header {
 
 .settings-row {
   display: grid;
-  grid-template-columns: 1fr auto auto auto;
+  grid-template-columns: 1fr auto auto auto auto auto;
   gap: 6px;
 }
 
@@ -190,7 +190,7 @@ header {
 
 .history-item {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 8px;
   padding: 6px 0;
 }
