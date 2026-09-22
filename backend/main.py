@@ -21,10 +21,14 @@ from backend.database import (
     init_db,
     list_runs,
     list_sessions,
+    list_eval_results,
     list_workflows,
+    save_eval_result,
 )
+from backend.evaluation import run_evaluation_suite
 from backend.schemas import (
     ActionResultEvent,
+    EvalListResponse,
     RunDetail,
     RunListResponse,
     SessionHistoryResponse,
@@ -374,6 +378,26 @@ async def prepare_workflow_run(workflow_id: str, request: Request):
         "prompt": workflow["prompt_template"],
         "steps": workflow["steps"],
     }
+
+
+@app.get("/evals", response_model=EvalListResponse)
+async def get_evals(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    require_http_auth(request)
+    evals = await asyncio.to_thread(list_eval_results, limit, offset)
+    return EvalListResponse(evals=evals)
+
+
+@app.post("/evals/run")
+async def run_evals(request: Request):
+    require_http_auth(request)
+    summary = await asyncio.to_thread(run_evaluation_suite)
+    status = "pass" if summary["failed"] == 0 else "fail"
+    saved = await asyncio.to_thread(save_eval_result, status, summary, summary["markdown"])
+    return saved
 
 
 if __name__ == "__main__":

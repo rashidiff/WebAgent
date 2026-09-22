@@ -188,3 +188,15 @@ class WorkflowRecord(BaseModel):
 
 class WorkflowListResponse(BaseModel):
     workflows: list[WorkflowRecord]
+
+
+class EvalRecord(BaseModel):
+    id: str
+    status: str
+    summary: dict[str, Any] = Field(default_factory=dict)
+    markdown: str
+    created_at: str
+
+
+class EvalListResponse(BaseModel):
+    evals: list[EvalRecord]

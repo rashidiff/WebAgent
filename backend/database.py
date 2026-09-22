@@ -75,6 +75,14 @@ CREATE TABLE IF NOT EXISTS workflows (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS eval_results (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    summary_json TEXT NOT NULL,
+    markdown TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -389,6 +397,35 @@ def delete_workflow(workflow_id: str) -> bool:
         conn.close()
 
 
+def save_eval_result(status: str, summary: Dict[str, Any], markdown: str) -> Dict[str, Any]:
+    conn = _get_connection()
+    try:
+        eval_id = str(uuid.uuid4())
+        now = _now()
+        summary_json = json.dumps(summary, ensure_ascii=False, sort_keys=True)
+        conn.execute(
+            "INSERT INTO eval_results (id, status, summary_json, markdown, created_at) VALUES (?, ?, ?, ?, ?)",
+            (eval_id, status, summary_json, markdown, now),
+        )
+        conn.commit()
+        return {"id": eval_id, "status": status, "summary": summary, "markdown": markdown, "created_at": now}
+    finally:
+        conn.close()
+
+
+def list_eval_results(limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+    conn = _get_connection()
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT id, status, summary_json, markdown, created_at FROM eval_results ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        return [_eval_row_to_dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
 def _step_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     item = dict(row)
     metadata_json = item.pop("metadata_json", None)
@@ -406,6 +443,16 @@ def _workflow_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         item["steps"] = json.loads(steps_json or "[]")
     except json.JSONDecodeError:
         item["steps"] = []
+    return item
+
+
+def _eval_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    item = dict(row)
+    summary_json = item.pop("summary_json", "{}")
+    try:
+        item["summary"] = json.loads(summary_json or "{}")
+    except json.JSONDecodeError:
+        item["summary"] = {}
     return item
 
 

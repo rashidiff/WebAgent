@@ -8,6 +8,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from backend import agent, database
+from backend.evaluation import run_evaluation_suite
 from backend.agent import SessionCoordinator, tool_signature
 from backend.main import app
 from backend.settings import Settings
@@ -424,6 +425,15 @@ class SettingsTests(unittest.TestCase):
         )
 
 
+class EvaluationTests(unittest.TestCase):
+    def test_local_mock_evaluation_suite_passes(self):
+        summary = run_evaluation_suite()
+
+        self.assertEqual(summary["failed"], 0)
+        self.assertGreaterEqual(summary["total"], 3)
+        self.assertIn("WebAgent Evaluation Summary", summary["markdown"])
+
+
 class HistoryApiTests(unittest.TestCase):
     def test_sessions_endpoints_list_and_delete_history(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -517,6 +527,20 @@ class HistoryApiTests(unittest.TestCase):
                 delete_response = client.delete(f"/workflows/{workflow_id}")
                 self.assertEqual(delete_response.status_code, 200)
                 self.assertEqual(delete_response.json(), {"deleted": 1})
+
+    def test_eval_endpoints_run_and_list_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+
+            with TestClient(app) as client:
+                run_response = client.post("/evals/run")
+                self.assertEqual(run_response.status_code, 200)
+                self.assertEqual(run_response.json()["status"], "pass")
+
+                list_response = client.get("/evals")
+                self.assertEqual(list_response.status_code, 200)
+                self.assertEqual(len(list_response.json()["evals"]), 1)
 
 
 if __name__ == "__main__":
