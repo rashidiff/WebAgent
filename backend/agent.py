@@ -270,7 +270,7 @@ class SessionCoordinator:
         return f"{risk['risk_level'].upper()} risk browser action requires approval: {risk['target_summary']}"
 
     def classify_action_risk(self, action: str, selector: str = None, value: str = None) -> Dict[str, str]:
-        if action in {"navigate", "back", "forward", "reload", "scroll", "hover", "wait", "get_text", "key"}:
+        if action in {"navigate", "back", "forward", "reload", "scroll", "hover", "wait", "get_text", "key", "wait_for_text", "detect_modal", "detect_download"}:
             return {"risk_level": "read_only", "target_summary": f"{action} on page"}
 
         element = self.get_element_for_selector(selector)
@@ -504,6 +504,46 @@ def create_agent_tools(coordinator: SessionCoordinator):
         """Waits briefly for page transitions, API results, animations, or DOM updates to settle."""
         return await coordinator.execute_action("wait")
 
+    @tool
+    async def clear_text(selector: str) -> str:
+        """Clears the current value/text of an input, textarea, or contenteditable element."""
+        return await coordinator.execute_action("clear", selector=selector)
+
+    @tool
+    async def double_click_element(selector: str) -> str:
+        """Double-clicks an element, useful for opening rows, selecting words, or activating rich controls."""
+        return await coordinator.execute_action("double_click", selector=selector)
+
+    @tool
+    async def toggle_control(selector: str) -> str:
+        """Toggles a checkbox, radio, switch, or similar binary control."""
+        return await coordinator.execute_action("toggle", selector=selector)
+
+    @tool
+    async def wait_for_text(text: str) -> str:
+        """Waits briefly and succeeds only if the visible page text contains the supplied text."""
+        return await coordinator.execute_action("wait_for_text", value=text)
+
+    @tool
+    async def detect_modal() -> str:
+        """Checks whether a visible modal/dialog/alert-like overlay is present."""
+        return await coordinator.execute_action("detect_modal")
+
+    @tool
+    async def detect_download() -> str:
+        """Checks whether the page exposes a visible download link or downloaded-file affordance."""
+        return await coordinator.execute_action("detect_download")
+
+    @tool
+    async def paste_clipboard_text(selector: str, text: str) -> str:
+        """Pastes text into an editable element using a clipboard-like input path."""
+        return await coordinator.execute_action("paste_clipboard", selector=selector, value=text)
+
+    @tool
+    async def drag_and_drop(source_selector: str, target_selector: str) -> str:
+        """Drags one element onto another element. Selectors should use data-agent-id values from the DOM."""
+        return await coordinator.execute_action("drag_drop", selector=source_selector, value=target_selector)
+
     return [
         click_element,
         input_text,
@@ -517,6 +557,14 @@ def create_agent_tools(coordinator: SessionCoordinator):
         reload_page,
         get_page_text,
         wait_for_page_change,
+        clear_text,
+        double_click_element,
+        toggle_control,
+        wait_for_text,
+        detect_modal,
+        detect_download,
+        paste_clipboard_text,
+        drag_and_drop,
     ]
 
 
@@ -575,6 +623,9 @@ Your task is to analyze this list, decide on the best next action, and execute i
 8. `go_back()`, `go_forward()`, `reload_page()`: Browser navigation controls.
 9. `get_page_text()`: Reads visible page text for comprehension or verification.
 10. `wait_for_page_change()`: Waits briefly for dynamic page updates.
+11. `clear_text(selector)`, `double_click_element(selector)`, `toggle_control(selector)`: Higher-fidelity element actions.
+12. `wait_for_text(text)`, `detect_modal()`, `detect_download()`: Verification helpers.
+13. `paste_clipboard_text(selector, text)`, `drag_and_drop(source_selector, target_selector)`: Advanced interaction helpers.
 
 INSTRUCTIONS:
 - Think briefly before every tool call: state what you expect the action to change, then verify after the tool result.

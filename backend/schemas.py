@@ -16,6 +16,14 @@ BrowserAction = Literal[
     "reload",
     "get_text",
     "wait",
+    "clear",
+    "double_click",
+    "toggle",
+    "wait_for_text",
+    "detect_modal",
+    "detect_download",
+    "paste_clipboard",
+    "drag_drop",
 ]
 
 

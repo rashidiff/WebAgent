@@ -290,6 +290,18 @@ function dispatchPointerMouseEvent(element, type, point) {
   }
 }
 
+function dispatchDragEvent(element, type, point, dataTransfer) {
+  element.dispatchEvent(new DragEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view: window,
+    clientX: point.x,
+    clientY: point.y,
+    dataTransfer
+  }));
+}
+
 function prepareElementForAction(element) {
   if (typeof element.scrollIntoView === "function") {
     element.scrollIntoView({ block: "center", inline: "center", behavior: "auto" });
@@ -342,6 +354,35 @@ function executePageAction(action, selector, value, expectedFingerprint) {
     return;
   }
 
+  if (action === "wait_for_text") {
+    const pageText = getReadableText(document).toLowerCase();
+    const expected = String(value || "").toLowerCase();
+    if (!expected || !pageText.includes(expected)) {
+      throw new Error(`Text not found on page: ${value}`);
+    }
+    return;
+  }
+
+  if (action === "detect_modal") {
+    const modal = queryAllElements().find((el) => {
+      const role = el.getAttribute("role");
+      const ariaModal = el.getAttribute("aria-modal");
+      return isVisibleElement(el) && (role === "dialog" || role === "alertdialog" || ariaModal === "true");
+    });
+    if (!modal) throw new Error("No visible modal or dialog detected");
+    return;
+  }
+
+  if (action === "detect_download") {
+    const downloadLink = queryAllElements().find((el) => {
+      const text = cleanText(el.innerText || el.textContent || el.getAttribute("aria-label") || "").toLowerCase();
+      const href = String(el.getAttribute("href") || "").toLowerCase();
+      return isVisibleElement(el) && (el.hasAttribute("download") || text.includes("download") || href.includes("download"));
+    });
+    if (!downloadLink) throw new Error("No visible download affordance detected");
+    return;
+  }
+
   const element = findElement(selector);
   if (!element) {
     throw new Error(`Element not found with selector: ${selector}`);
@@ -369,6 +410,15 @@ function executePageAction(action, selector, value, expectedFingerprint) {
     if (element.tagName === "INPUT" && (element.type === "checkbox" || element.type === "radio")) {
       element.dispatchEvent(new Event("change", { bubbles: true }));
     }
+  } else if (action === "double_click") {
+    const center = getElementCenter(element);
+    dispatchPointerMouseEvent(element, "pointerover", center);
+    dispatchPointerMouseEvent(element, "mouseover", center);
+    dispatchPointerMouseEvent(element, "pointerdown", center);
+    dispatchPointerMouseEvent(element, "mousedown", center);
+    dispatchPointerMouseEvent(element, "pointerup", center);
+    dispatchPointerMouseEvent(element, "mouseup", center);
+    element.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, composed: true, view: window, clientX: center.x, clientY: center.y }));
   } else if (action === "input") {
     if (element.isContentEditable) {
       element.textContent = value;
@@ -376,6 +426,23 @@ function executePageAction(action, selector, value, expectedFingerprint) {
       setNativeValue(element, value);
     }
     element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  } else if (action === "clear") {
+    if (element.isContentEditable) {
+      element.textContent = "";
+    } else {
+      setNativeValue(element, "");
+    }
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  } else if (action === "paste_clipboard") {
+    if (element.isContentEditable) {
+      element.textContent = value;
+    } else {
+      setNativeValue(element, value);
+    }
+    element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true }));
+    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste", data: value }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   } else if (action === "select") {
     if (element.tagName !== "SELECT") {
@@ -389,6 +456,25 @@ function executePageAction(action, selector, value, expectedFingerprint) {
     dispatchPointerMouseEvent(element, "pointerover", center);
     dispatchPointerMouseEvent(element, "mouseover", center);
     element.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, cancelable: true, composed: true, view: window, clientX: center.x, clientY: center.y }));
+  } else if (action === "toggle") {
+    const role = element.getAttribute("role");
+    const isToggleLike = element.tagName === "INPUT" && ["checkbox", "radio"].includes(element.type);
+    if (!isToggleLike && !["checkbox", "radio", "switch"].includes(role)) {
+      throw new Error(`Element is not a toggleable control: ${selector}`);
+    }
+    element.click();
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  } else if (action === "drag_drop") {
+    const target = findElement(value);
+    if (!target) throw new Error(`Drop target not found with selector: ${value}`);
+    const sourcePoint = getElementCenter(element);
+    const targetPoint = getElementCenter(target);
+    const dataTransfer = new DataTransfer();
+    dispatchDragEvent(element, "dragstart", sourcePoint, dataTransfer);
+    dispatchDragEvent(target, "dragenter", targetPoint, dataTransfer);
+    dispatchDragEvent(target, "dragover", targetPoint, dataTransfer);
+    dispatchDragEvent(target, "drop", targetPoint, dataTransfer);
+    dispatchDragEvent(element, "dragend", targetPoint, dataTransfer);
   } else {
     throw new Error(`Unsupported action: ${action}`);
   }
