@@ -342,6 +342,46 @@ class DatabaseTests(unittest.TestCase):
             self.assertEqual(database.clear_sessions(), 2)
             self.assertEqual(database.count_sessions(), 0)
 
+    def test_run_steps_round_trip_with_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+
+            database.create_run("run-1", "do the thing", status="running", plan="1. inspect")
+            database.add_run_step(
+                "run-1",
+                event_type="ACTION",
+                title="Click search",
+                detail="Clicked the visible search button.",
+                action="click",
+                selector="[data-agent-id=\"1\"]",
+                url="https://example.com",
+                metadata={"risk_level": "low"},
+            )
+            database.update_run_status("run-1", "success")
+
+            run = database.get_run("run-1")
+
+            self.assertEqual(run["prompt"], "do the thing")
+            self.assertEqual(run["status"], "success")
+            self.assertEqual(run["steps"][0]["metadata"], {"risk_level": "low"})
+
+    def test_workflow_crud_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+
+            workflow = database.create_workflow(
+                "Search flow",
+                "Search for {{query}}",
+                [{"event_type": "ACTION", "title": "Open search"}],
+                source_run_id=None,
+            )
+
+            self.assertEqual(database.list_workflows()[0]["id"], workflow["id"])
+            self.assertTrue(database.delete_workflow(workflow["id"]))
+            self.assertEqual(database.list_workflows(), [])
+
 
 class SettingsTests(unittest.TestCase):
     def test_settings_split_cors_origins(self):
@@ -388,6 +428,50 @@ class HistoryApiTests(unittest.TestCase):
                 response = client.delete("/sessions/missing")
 
             self.assertEqual(response.status_code, 404)
+
+    def test_run_endpoints_and_markdown_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+            database.create_run("run-api", "browse demo", status="success", plan="Plan text")
+            database.add_run_step("run-api", "PLAN", "Planned task", detail="Plan text")
+
+            with TestClient(app) as client:
+                list_response = client.get("/runs")
+                self.assertEqual(list_response.status_code, 200)
+                self.assertEqual(list_response.json()["total"], 1)
+
+                detail_response = client.get("/runs/run-api")
+                self.assertEqual(detail_response.status_code, 200)
+                self.assertEqual(detail_response.json()["steps"][0]["event_type"], "PLAN")
+
+                export_response = client.get("/runs/run-api/export?format=markdown")
+                self.assertEqual(export_response.status_code, 200)
+                self.assertIn("# WebAgent Replay: run-api", export_response.text)
+
+    def test_workflow_endpoints_create_list_delete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+
+            with TestClient(app) as client:
+                create_response = client.post(
+                    "/workflows",
+                    json={
+                        "name": "Demo workflow",
+                        "prompt_template": "Do {{task}}",
+                        "steps": [{"title": "First"}],
+                    },
+                )
+                self.assertEqual(create_response.status_code, 200)
+                workflow_id = create_response.json()["id"]
+
+                list_response = client.get("/workflows")
+                self.assertEqual(len(list_response.json()["workflows"]), 1)
+
+                delete_response = client.delete(f"/workflows/{workflow_id}")
+                self.assertEqual(delete_response.status_code, 200)
+                self.assertEqual(delete_response.json(), {"deleted": 1})
 
 
 if __name__ == "__main__":

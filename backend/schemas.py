@@ -81,6 +81,8 @@ class AgentActionEvent(BaseModel):
     expected_fingerprint: str = ""
     requires_approval: bool = False
     approval_reason: str = ""
+    risk_level: str = "low"
+    target_summary: str = ""
 
 
 class SessionSummary(BaseModel):
@@ -115,3 +117,64 @@ class SessionListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class RunStepRecord(BaseModel):
+    id: int
+    run_id: str
+    step_index: int
+    event_type: str
+    title: str
+    detail: str | None = None
+    action: str | None = None
+    selector: str | None = None
+    value: str | None = None
+    url: str | None = None
+    page_title: str | None = None
+    dom_summary: str | None = None
+    screenshot_before: str | None = None
+    screenshot_after: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class RunSummary(BaseModel):
+    id: str
+    session_id: str | None = None
+    prompt: str
+    status: str
+    plan: str | None = None
+    started_at: str
+    ended_at: str | None = None
+
+
+class RunDetail(RunSummary):
+    steps: list[RunStepRecord] = Field(default_factory=list)
+
+
+class RunListResponse(BaseModel):
+    runs: list[RunSummary]
+    total: int
+    limit: int
+    offset: int
+
+
+class WorkflowCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    prompt_template: str = Field(min_length=1)
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    source_run_id: str | None = None
+
+
+class WorkflowRecord(BaseModel):
+    id: str
+    name: str
+    prompt_template: str
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+    source_run_id: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class WorkflowListResponse(BaseModel):
+    workflows: list[WorkflowRecord]

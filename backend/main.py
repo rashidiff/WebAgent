@@ -1,14 +1,38 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Query, Request, Response, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
 from backend.agent import SessionCoordinator, run_browser_agent
-from backend.database import clear_sessions, count_sessions, delete_session, get_session_history, init_db, list_sessions
-from backend.schemas import ActionResultEvent, SessionHistoryResponse, SessionListResponse, UserInputEvent
+from backend.database import (
+    clear_sessions,
+    count_runs,
+    count_sessions,
+    create_workflow,
+    delete_run,
+    delete_session,
+    delete_workflow,
+    get_run,
+    get_session_history,
+    init_db,
+    list_runs,
+    list_sessions,
+    list_workflows,
+)
+from backend.schemas import (
+    ActionResultEvent,
+    RunDetail,
+    RunListResponse,
+    SessionHistoryResponse,
+    SessionListResponse,
+    UserInputEvent,
+    WorkflowCreateRequest,
+    WorkflowListResponse,
+    WorkflowRecord,
+)
 from backend.settings import get_settings
 
 load_dotenv(override=True)
@@ -65,6 +89,71 @@ def websocket_authorized(websocket: WebSocket) -> bool:
         return True
     supplied = websocket.query_params.get("token")
     return supplied == AUTH_TOKEN
+
+
+def render_run_markdown(run: dict) -> str:
+    lines = [
+        f"# WebAgent Replay: {run['id']}",
+        "",
+        f"- Status: {run['status']}",
+        f"- Prompt: {run['prompt']}",
+        f"- Started: {run['started_at']}",
+    ]
+    if run.get("plan"):
+        lines.extend(["", "## Plan", "", run["plan"]])
+    lines.extend(["", "## Steps"])
+    for step in run.get("steps", []):
+        lines.append(f"- Step {step['step_index']} [{step['event_type']}]: {step['title']}")
+        if step.get("detail"):
+            lines.append(f"  {step['detail']}")
+        if step.get("url"):
+            lines.append(f"  URL: {step['url']}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_run_html(run: dict) -> str:
+    def esc(value: object) -> str:
+        return (
+            str(value or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    steps = "\n".join(
+        "<article class='step'>"
+        f"<h2>Step {step['step_index']} <span>{esc(step['event_type'])}</span></h2>"
+        f"<p><strong>{esc(step['title'])}</strong></p>"
+        f"<p>{esc(step.get('detail'))}</p>"
+        f"<p class='url'>{esc(step.get('url'))}</p>"
+        "</article>"
+        for step in run.get("steps", [])
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WebAgent Replay {esc(run['id'])}</title>
+  <style>
+    body {{ font-family: Inter, system-ui, sans-serif; margin: 32px; background: #101113; color: #eceff4; }}
+    .step {{ border: 1px solid #30343b; border-radius: 8px; margin: 16px 0; padding: 16px; background: #181a1f; }}
+    h1, h2 {{ margin: 0 0 8px; }}
+    h2 span {{ color: #9fbff7; font-size: 0.75em; text-transform: uppercase; }}
+    .url {{ color: #9aa3af; word-break: break-all; }}
+  </style>
+</head>
+<body>
+  <h1>WebAgent Replay</h1>
+  <p><strong>Status:</strong> {esc(run['status'])}</p>
+  <p><strong>Prompt:</strong> {esc(run['prompt'])}</p>
+  <p><strong>Started:</strong> {esc(run['started_at'])}</p>
+  <h2>Plan</h2>
+  <p>{esc(run.get('plan'))}</p>
+  {steps}
+</body>
+</html>"""
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -187,6 +276,78 @@ async def delete_recorded_session(session_id: str, request: Request):
     deleted = await asyncio.to_thread(delete_session, session_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found.")
+    return {"deleted": 1}
+
+
+@app.get("/runs", response_model=RunListResponse)
+async def get_runs(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    require_http_auth(request)
+    runs = await asyncio.to_thread(list_runs, limit, offset)
+    total = await asyncio.to_thread(count_runs)
+    return RunListResponse(runs=runs, total=total, limit=limit, offset=offset)
+
+
+@app.get("/runs/{run_id}", response_model=RunDetail)
+async def get_recorded_run(run_id: str, request: Request):
+    require_http_auth(request)
+    run = await asyncio.to_thread(get_run, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return run
+
+
+@app.delete("/runs/{run_id}")
+async def delete_recorded_run(run_id: str, request: Request):
+    require_http_auth(request)
+    deleted = await asyncio.to_thread(delete_run, run_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return {"deleted": 1}
+
+
+@app.get("/runs/{run_id}/export")
+async def export_recorded_run(run_id: str, request: Request, format: str = Query(default="markdown")):
+    require_http_auth(request)
+    run = await asyncio.to_thread(get_run, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    if format == "html":
+        return Response(render_run_html(run), media_type="text/html")
+    if format in {"md", "markdown"}:
+        return Response(render_run_markdown(run), media_type="text/markdown")
+    raise HTTPException(status_code=400, detail="format must be html or markdown.")
+
+
+@app.get("/workflows", response_model=WorkflowListResponse)
+async def get_workflows(request: Request):
+    require_http_auth(request)
+    workflows = await asyncio.to_thread(list_workflows)
+    return WorkflowListResponse(workflows=workflows)
+
+
+@app.post("/workflows", response_model=WorkflowRecord)
+async def create_recorded_workflow(payload: WorkflowCreateRequest, request: Request):
+    require_http_auth(request)
+    workflow = await asyncio.to_thread(
+        create_workflow,
+        payload.name.strip(),
+        payload.prompt_template.strip(),
+        payload.steps,
+        payload.source_run_id,
+    )
+    return workflow
+
+
+@app.delete("/workflows/{workflow_id}")
+async def delete_recorded_workflow(workflow_id: str, request: Request):
+    require_http_auth(request)
+    deleted = await asyncio.to_thread(delete_workflow, workflow_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Workflow not found.")
     return {"deleted": 1}
 
 
