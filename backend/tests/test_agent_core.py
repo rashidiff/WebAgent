@@ -12,6 +12,7 @@ from backend.evaluation import run_evaluation_suite
 from backend.agent import SessionCoordinator, tool_signature
 from backend.main import app
 from backend.settings import Settings
+from backend.security import validate_navigation_url
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
@@ -447,6 +448,12 @@ class SettingsTests(unittest.TestCase):
             settings.cors_origins,
             ["http://localhost:3000", "https://example.com"],
         )
+
+    def test_navigation_policy_blocks_private_and_credential_urls(self):
+        self.assertFalse(validate_navigation_url("http://127.0.0.1:8000" )[0])
+        self.assertFalse(validate_navigation_url("https://user:pass@example.com" )[0])
+        self.assertFalse(validate_navigation_url("javascript:alert(1)" )[0])
+        self.assertTrue(validate_navigation_url("https://example.com" )[0])
 
 
 class EvaluationTests(unittest.TestCase):

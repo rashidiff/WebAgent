@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     action_timeout_seconds: float = Field(default=40.0, alias="ACTION_TIMEOUT_SECONDS")
     max_dom_elements: int = Field(default=150, alias="MAX_DOM_ELEMENTS")
     require_action_approval: bool = Field(default=True, alias="REQUIRE_ACTION_APPROVAL")
+    max_actions_per_minute: int = Field(default=30, alias="MAX_ACTIONS_PER_MINUTE", ge=1, le=600)
+    allow_private_networks: bool = Field(default=False, alias="ALLOW_PRIVATE_NETWORKS")
 
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
