@@ -130,18 +130,19 @@ function connectWS() {
   };
 }
 
-function storageGet(keys) {
-  return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
+function storageGet(keys, area = "local") {
+  return new Promise((resolve) => chrome.storage[area].get(keys, resolve));
 }
 
-function storageSet(values) {
-  return new Promise((resolve) => chrome.storage.local.set(values, resolve));
+function storageSet(values, area = "local") {
+  return new Promise((resolve) => chrome.storage[area].set(values, resolve));
 }
 
 async function loadSettings() {
-  const saved = await storageGet({ backendUrl: backendUrl, authToken: "" });
+  const saved = await storageGet({ backendUrl: backendUrl }, "local");
+  const session = await storageGet({ authToken: "" }, "session");
   backendUrl = normalizeBackendUrl(saved.backendUrl || backendUrl);
-  authToken = saved.authToken || "";
+  authToken = session.authToken || "";
   backendUrlInput.value = backendUrl;
   authTokenInput.value = authToken;
 }
@@ -159,7 +160,8 @@ async function saveSettings() {
   backendUrl = normalizeBackendUrl(backendUrlInput.value);
   authToken = authTokenInput.value.trim();
   backendUrlInput.value = backendUrl;
-  await storageSet({ backendUrl, authToken });
+  await storageSet({ backendUrl }, "local");
+  await storageSet({ authToken }, "session");
   updateLog("Settings saved. Reconnecting...");
   if (socket && socket.readyState !== WebSocket.CLOSED) {
     socket.close();

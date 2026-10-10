@@ -144,6 +144,8 @@ If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same t
 
 WebSocket connections are restricted to `WS_ALLOWED_ORIGINS` (default: `chrome-extension://*`). If you package the extension with a fixed ID, set this to the exact `chrome-extension://<extension-id>` origin.
 
+The sidepanel stores the backend URL persistently, but keeps `AGENT_AUTH_TOKEN` in Chrome session storage so it is discarded when the browser session ends.
+
 ---
 
 ## 🧪 Local Evaluation
