@@ -13,7 +13,7 @@ from backend.database import HistoryStore
 from backend.database import add_run_step, create_run, update_run_status
 from backend.schemas import AgentActionEvent, AgentStatusEvent
 from backend.settings import get_settings
-from backend.security import validate_element_navigation, validate_navigation_url
+from backend.security import redact_for_llm, redact_url_for_llm, validate_element_navigation, validate_navigation_url
 
 load_dotenv(override=True)
 settings = get_settings()
@@ -412,9 +412,9 @@ class SessionCoordinator:
     def format_page_text_for_llm(self, page_text: Dict[str, Any]) -> str:
         if not page_text:
             return "[No page text captured]"
-        title = page_text.get("title") or ""
-        url = page_text.get("url") or ""
-        text = page_text.get("text") or ""
+        title = redact_for_llm(page_text.get("title") or "")
+        url = redact_url_for_llm(page_text.get("url") or "")
+        text = redact_for_llm(page_text.get("text") or "")
         return (
             "<untrusted_page_text>\n"
             f"Title: {title}\nURL: {url}\nText: {text[:6000]}\n"
@@ -474,7 +474,7 @@ class SessionCoordinator:
         if truncated:
             lines.append(f"[... truncated to first {self.MAX_DOM_ELEMENTS} elements; scroll to reveal more ...]")
 
-        return "<untrusted_page_dom>\n" + "\n".join(lines) + "\n</untrusted_page_dom>"
+        return "<untrusted_page_dom>\n" + redact_for_llm("\n".join(lines)) + "\n</untrusted_page_dom>"
 
     def summarize_dom(self, dom: List[Dict[str, Any]], limit: int = 8) -> str:
         if not dom:

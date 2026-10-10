@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import ipaddress
 import fnmatch
+import re
 from urllib.parse import urljoin, urlparse
 
 
 BLOCKED_SCHEMES = {"javascript", "data", "file", "blob", "about", "chrome", "chrome-extension"}
+_EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+_CARD_PATTERN = re.compile(r"\b(?:\d[ -]?){13,19}\b")
+_TOKEN_PATTERN = re.compile(r"\b(?:sk|pk|AIza|ghp|xox[baprs])[-_A-Za-z0-9]{16,}\b|\bBearer\s+[A-Za-z0-9._~+/=-]{16,}\b", re.IGNORECASE)
 
 
 def is_allowed_websocket_origin(origin: str | None, allowed_patterns: list[str]) -> bool:
@@ -13,6 +17,19 @@ def is_allowed_websocket_origin(origin: str | None, allowed_patterns: list[str])
     if not origin:
         return False
     return any(fnmatch.fnmatchcase(origin, pattern) for pattern in allowed_patterns)
+
+
+def redact_for_llm(value: object) -> str:
+    """Remove common secrets and PII before browser data reaches an LLM provider."""
+    text = str(value or "")
+    text = _EMAIL_PATTERN.sub("[redacted-email]", text)
+    text = _CARD_PATTERN.sub("[redacted-card]", text)
+    return _TOKEN_PATTERN.sub("[redacted-token]", text)
+
+
+def redact_url_for_llm(url: object) -> str:
+    """Query strings commonly contain session IDs, search terms, and opaque tokens."""
+    return redact_for_llm(url).split("?", 1)[0]
 
 
 def validate_navigation_url(url: str, allow_private_networks: bool = False) -> tuple[bool, str]:

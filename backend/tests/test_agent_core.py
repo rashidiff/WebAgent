@@ -14,7 +14,7 @@ from backend.agent import SessionCoordinator, tool_signature
 from backend import main
 from backend.main import app
 from backend.settings import Settings
-from backend.security import is_allowed_websocket_origin, validate_element_navigation, validate_navigation_url
+from backend.security import redact_for_llm, redact_url_for_llm, is_allowed_websocket_origin, validate_element_navigation, validate_navigation_url
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
@@ -510,6 +510,13 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(validate_element_navigation({"href": "javascript:alert(1)"}, "https://example.com")[0])
         self.assertFalse(validate_element_navigation({"href": "http://127.0.0.1:8000"}, "https://example.com")[0])
         self.assertTrue(validate_element_navigation({"href": "/account"}, "https://example.com")[0])
+
+    def test_llm_redaction_removes_common_pii_and_tokens(self):
+        value = redact_for_llm("email alice@example.com card 4242 4242 4242 4242 sk-abcdefghijklmnopqrstuv")
+        self.assertNotIn("alice@example.com", value)
+        self.assertNotIn("4242 4242", value)
+        self.assertNotIn("sk-abcdefghijklmnopqrstuv", value)
+        self.assertEqual(redact_url_for_llm("https://example.com/?token=secret"), "https://example.com/")
 
 
 class EvaluationTests(unittest.TestCase):
