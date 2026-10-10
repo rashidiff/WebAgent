@@ -13,7 +13,7 @@ from backend.database import HistoryStore
 from backend.database import add_run_step, create_run, update_run_status
 from backend.schemas import AgentActionEvent, AgentStatusEvent
 from backend.settings import get_settings
-from backend.security import validate_navigation_url
+from backend.security import validate_element_navigation, validate_navigation_url
 
 load_dotenv(override=True)
 settings = get_settings()
@@ -172,6 +172,15 @@ class SessionCoordinator:
             valid, reason = validate_navigation_url(value or "", settings.allow_private_networks)
             if not valid:
                 return f"Error: Navigation blocked by security policy: {reason}"
+        elif action in {"click", "double_click", "toggle"}:
+            element = self.get_element_for_selector(selector)
+            valid, reason = validate_element_navigation(
+                element,
+                str(self.last_page_text.get("url") or ""),
+                settings.allow_private_networks,
+            )
+            if not valid:
+                return f"Error: Browser action blocked by security policy: {reason}"
         self.action_timestamps.append(now)
             
         # Clean queue before waiting
@@ -311,6 +320,9 @@ class SessionCoordinator:
 
         input_type = str(element.get("type") or "").lower()
         target_summary = self.summarize_action_target(action, selector, value, element)
+
+        if action in {"click", "double_click", "toggle"} and (element.get("href") or element.get("formAction")):
+            return {"risk_level": "high", "target_summary": target_summary}
 
         critical_terms = {"pay", "payment", "checkout", "transfer", "withdraw", "place order", "buy", "purchase"}
         high_terms = {"submit", "send", "delete", "remove", "confirm", "sign", "agree", "accept", "book", "order"}

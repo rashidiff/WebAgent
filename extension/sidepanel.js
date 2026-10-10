@@ -741,10 +741,12 @@ async function startSession() {
   updateLog("Parsing DOM from active webpage...");
   
   let domTree = [];
+  let pageText = null;
   try {
     const response = await sendMessageToTab(tab.id, { type: 'get_dom' });
     if (response && response.status === 'success') {
       domTree = response.dom_tree;
+      pageText = response.page_text || null;
     } else {
       throw new Error(response ? response.error : "Failed to obtain elements");
     }
@@ -755,6 +757,7 @@ async function startSession() {
       const response = await sendMessageToTab(tab.id, { type: 'get_dom' });
       if (response && response.status === 'success') {
         domTree = response.dom_tree;
+        pageText = response.page_text || null;
       } else {
         throw new Error(response ? response.error : "Failed after script injection");
       }
@@ -769,7 +772,8 @@ async function startSession() {
     socket.send(JSON.stringify({
       type: "user_input",
       prompt: prompt,
-      dom_tree: domTree
+      dom_tree: domTree,
+      page_text: pageText
     }));
     updateLog("Agent loop initialized.");
   } else {

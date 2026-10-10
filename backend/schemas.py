@@ -62,6 +62,7 @@ class UserInputEvent(BaseModel):
     type: Literal["user_input"]
     prompt: str = Field(min_length=1, max_length=8000)
     dom_tree: list[InteractiveDomElement] = Field(default_factory=list, max_length=150)
+    page_text: PageTextPayload | None = None
 
 
 class ActionResultEvent(BaseModel):

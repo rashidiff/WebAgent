@@ -13,7 +13,7 @@ from backend.agent import SessionCoordinator, tool_signature
 from backend import main
 from backend.main import app
 from backend.settings import Settings
-from backend.security import is_allowed_websocket_origin, validate_navigation_url
+from backend.security import is_allowed_websocket_origin, validate_element_navigation, validate_navigation_url
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
@@ -464,6 +464,11 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(is_allowed_websocket_origin("chrome-extension://abc", ["chrome-extension://*"]))
         self.assertFalse(is_allowed_websocket_origin("https://evil.example", ["chrome-extension://*"]))
         self.assertFalse(is_allowed_websocket_origin(None, ["chrome-extension://*"]))
+
+    def test_element_navigation_policy_blocks_dangerous_links(self):
+        self.assertFalse(validate_element_navigation({"href": "javascript:alert(1)"}, "https://example.com")[0])
+        self.assertFalse(validate_element_navigation({"href": "http://127.0.0.1:8000"}, "https://example.com")[0])
+        self.assertTrue(validate_element_navigation({"href": "/account"}, "https://example.com")[0])
 
 
 class EvaluationTests(unittest.TestCase):

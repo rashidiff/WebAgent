@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import fnmatch
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 
 BLOCKED_SCHEMES = {"javascript", "data", "file", "blob", "about", "chrome", "chrome-extension"}
@@ -41,3 +41,16 @@ def validate_navigation_url(url: str, allow_private_networks: bool = False) -> t
             return False, "Private, loopback, link-local, and reserved network targets are blocked."
 
     return True, "ok"
+
+
+def validate_element_navigation(
+    element: dict[str, object],
+    page_url: str,
+    allow_private_networks: bool = False,
+) -> tuple[bool, str]:
+    """Apply navigation policy to links and form controls, not only navigate()."""
+    raw_target = str(element.get("href") or element.get("formAction") or "").strip()
+    if not raw_target:
+        return True, "ok"
+    target = urljoin(page_url, raw_target) if page_url else raw_target
+    return validate_navigation_url(target, allow_private_networks)

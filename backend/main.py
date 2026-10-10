@@ -218,6 +218,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 user_event = UserInputEvent.model_validate(data)
                 prompt = user_event.prompt.strip()
                 dom_tree = [item.model_dump(exclude_none=True) for item in user_event.dom_tree]
+                coordinator.last_page_text = (user_event.page_text.model_dump(exclude_none=True) if user_event.page_text else {})
 
                 if not prompt:
                     await coordinator.send_status("ERROR: Prompt cannot be empty.")
