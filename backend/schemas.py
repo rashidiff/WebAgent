@@ -88,6 +88,7 @@ class AgentActionEvent(BaseModel):
     run_id: str
     action_id: str
     capability_token: str
+    capture_screenshots: bool = False
     selector: str | None = None
     value: str | None = None
     expected_fingerprint: str = ""

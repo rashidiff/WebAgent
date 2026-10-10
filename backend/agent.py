@@ -193,6 +193,7 @@ class SessionCoordinator:
                 run_id=self.current_run_id,
                 action_id=action_id,
                 capability_token=capability_token,
+                capture_screenshots=settings.capture_screenshots,
                 selector=selector,
                 value=value,
                 expected_fingerprint=expected_fingerprint,

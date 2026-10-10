@@ -432,7 +432,8 @@ function requestActionApproval(data) {
 }
 
 async function executeAgentAction(tab, data) {
-  const screenshotBefore = await captureVisibleScreenshot();
+  const captureScreenshots = data.capture_screenshots === true;
+  const screenshotBefore = captureScreenshots ? await captureVisibleScreenshot() : null;
   let response = null;
 
   if (TAB_LEVEL_ACTIONS.has(data.action)) {
@@ -453,7 +454,7 @@ async function executeAgentAction(tab, data) {
     });
   }
 
-  const screenshotAfter = await captureVisibleScreenshot();
+  const screenshotAfter = captureScreenshots ? await captureVisibleScreenshot() : null;
   return {
     ...(response || {}),
     screenshot_before: screenshotBefore,

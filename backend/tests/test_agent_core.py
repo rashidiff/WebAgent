@@ -448,6 +448,7 @@ class SettingsTests(unittest.TestCase):
             settings.cors_origins,
             ["http://localhost:3000", "https://example.com"],
         )
+        self.assertFalse(settings.capture_screenshots)
 
     def test_navigation_policy_blocks_private_and_credential_urls(self):
         self.assertFalse(validate_navigation_url("http://127.0.0.1:8000" )[0])
