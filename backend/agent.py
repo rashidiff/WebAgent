@@ -270,8 +270,11 @@ class SessionCoordinator:
         return f"{risk['risk_level'].upper()} risk browser action requires approval: {risk['target_summary']}"
 
     def classify_action_risk(self, action: str, selector: str = None, value: str = None) -> Dict[str, str]:
-        if action in {"navigate", "back", "forward", "reload", "scroll", "hover", "wait", "get_text", "key", "wait_for_text", "detect_modal", "detect_download"}:
+        if action in {"back", "forward", "reload", "scroll", "hover", "wait", "get_text", "key", "wait_for_text", "detect_modal", "detect_download"}:
             return {"risk_level": "read_only", "target_summary": f"{action} on page"}
+
+        if action == "navigate":
+            return {"risk_level": "high", "target_summary": f"navigate to {value or 'unknown URL'}"}
 
         element = self.get_element_for_selector(selector)
         element_text = " ".join(
@@ -290,7 +293,7 @@ class SessionCoordinator:
 
         if any(term in combined for term in critical_terms):
             return {"risk_level": "critical", "target_summary": target_summary}
-        if action == "input" and (input_type in {"password"} or any(term in element_text for term in credential_terms)):
+        if action in {"input", "paste_clipboard"} and (input_type in {"password"} or any(term in element_text for term in credential_terms)):
             return {"risk_level": "critical", "target_summary": target_summary}
         if any(keyword in combined for keyword in high_terms):
             return {"risk_level": "high", "target_summary": target_summary}
@@ -333,7 +336,7 @@ class SessionCoordinator:
         sensitive_input_types = {"password", "email", "tel", "number"}
         sensitive_terms = {"password", "passcode", "token", "secret", "api key", "credit card", "card number", "cvv", "ssn"}
 
-        if action == "input" and (input_type in sensitive_input_types or any(term in element_text for term in sensitive_terms)):
+        if action in {"input", "paste_clipboard"} and (input_type in sensitive_input_types or any(term in element_text for term in sensitive_terms)):
             return "[redacted]"
         return value
 

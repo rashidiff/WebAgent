@@ -69,6 +69,17 @@ function getElementFingerprint(el) {
   return Math.abs(hash).toString(36);
 }
 
+function isSensitiveElement(el) {
+  const type = String(el.getAttribute("type") || "").toLowerCase();
+  const metadata = [
+    el.getAttribute("name"),
+    el.getAttribute("autocomplete"),
+    el.getAttribute("aria-label"),
+    el.getAttribute("placeholder")
+  ].filter(Boolean).join(" ").toLowerCase();
+  return type === "password" || /password|passcode|secret|token|api[ -]?key|cvv|cvc|card number|ssn/.test(metadata);
+}
+
 function getSameOriginFrameDocument(frame) {
   try {
     return frame.contentDocument || (frame.contentWindow && frame.contentWindow.document) || null;
@@ -205,7 +216,8 @@ function getInteractiveDOM() {
           className: cleanText(el.getAttribute("class"), 120) || null,
           role: role || null,
           placeholder: el.getAttribute("placeholder") || null,
-          value: el.value || null,
+          // Never expose credential-like values to the model or backend history.
+          value: isSensitiveElement(el) ? null : (el.value || null),
           selector: `[data-agent-id="${agentIdCounter}"]`,
           fingerprint: getElementFingerprint(el),
           disabled: Boolean(el.disabled || el.getAttribute("aria-disabled") === "true"),
@@ -447,6 +459,9 @@ function executePageAction(action, selector, value, expectedFingerprint) {
   } else if (action === "select") {
     if (element.tagName !== "SELECT") {
       throw new Error(`Element is not a SELECT: ${selector}`);
+    }
+    if (!Array.from(element.options).some((option) => option.value === value)) {
+      throw new Error(`Option value is not available in SELECT: ${value}`);
     }
     element.value = value;
     element.dispatchEvent(new Event("input", { bubbles: true }));

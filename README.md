@@ -23,6 +23,7 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 - **Sidepanel Replay, Workflow & History Viewer**: Configure the backend URL and optional auth token, inspect sessions/replays/workflows, search local records, export replays, and clear local history without leaving the sidepanel.
 - **Local Evaluation Suite**: Ships with mock form, shop, table, modal, and fake-login pages plus a smoke-test runner that emits JSON/Markdown-ready benchmark summaries.
 - **Sensitive Value Redaction**: Credential-like input values are redacted before browser actions are written to local history.
+- **Credential-Safe DOM Capture**: Password, token, API-key, card, and similar field values are omitted before DOM data is sent to the model.
 - **Optional Local Auth**: Set `AGENT_AUTH_TOKEN` to protect the WebSocket and session history endpoints on shared machines.
 
 ---
@@ -156,6 +157,8 @@ python -m backend.evaluation --json eval-results.json --markdown eval-summary.md
 ```
 
 The V1 suite validates that the demo pages used for form filling, cart actions, table search, modal detection, and credential-field safety contain the expected markers. It is intentionally lightweight so it can run in CI and act as a foundation for future end-to-end browser-agent benchmarks.
+
+The smoke suite is a fixture/marker check, not a full browser execution benchmark. For production-quality changes, add a Chrome-driven end-to-end scenario and assert the post-action page state.
 
 ---
 

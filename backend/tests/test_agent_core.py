@@ -65,6 +65,27 @@ class AgentCoreTests(unittest.TestCase):
         self.assertEqual(risk["risk_level"], "critical")
         self.assertIn("Checkout", risk["target_summary"])
 
+    def test_navigation_requires_approval(self):
+        coordinator = SessionCoordinator(websocket=None)
+
+        risk = coordinator.classify_action_risk("navigate", value="https://example.com")
+
+        self.assertEqual(risk["risk_level"], "high")
+
+    def test_sensitive_paste_value_is_redacted_for_history(self):
+        coordinator = SessionCoordinator(websocket=None)
+        coordinator.current_dom = [
+            {
+                "selector": "[data-agent-id=\"5\"]",
+                "tagName": "INPUT",
+                "name": "api_token",
+            }
+        ]
+
+        value = coordinator.redact_action_value("paste_clipboard", "[data-agent-id=\"5\"]", "secret-token")
+
+        self.assertEqual(value, "[redacted]")
+
     def test_sensitive_input_value_is_redacted_for_history(self):
         coordinator = SessionCoordinator(websocket=None)
         coordinator.current_dom = [
