@@ -549,6 +549,37 @@ class HistoryApiTests(unittest.TestCase):
                 self.assertEqual(delete_response.status_code, 200)
                 self.assertEqual(delete_response.json(), {"deleted": 1})
 
+    def test_workflow_run_substitutes_variables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+            workflow = database.create_workflow(
+                "Search flow",
+                "Search for {{query}} on {{site}}",
+                [],
+            )
+
+            with TestClient(app) as client:
+                response = client.post(
+                    f"/workflows/{workflow['id']}/run",
+                    json={"variables": {"query": "WebAgent", "site": "example.com"}},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["prompt"], "Search for WebAgent on example.com")
+
+    def test_workflow_run_rejects_missing_variables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+            workflow = database.create_workflow("Search flow", "Search for {{query}}", [])
+
+            with TestClient(app) as client:
+                response = client.post(f"/workflows/{workflow['id']}/run", json={"variables": {}})
+
+            self.assertEqual(response.status_code, 422)
+            self.assertEqual(response.json()["detail"]["missing_variables"], ["query"])
+
     def test_eval_endpoints_run_and_list_results(self):
         with tempfile.TemporaryDirectory() as tmp:
             database.DB_PATH = os.path.join(tmp, "history.db")

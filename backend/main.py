@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query, Request, Response, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,7 @@ from backend.schemas import (
     SessionListResponse,
     UserInputEvent,
     WorkflowCreateRequest,
+    WorkflowRunRequest,
     WorkflowListResponse,
     WorkflowRecord,
 )
@@ -379,15 +381,31 @@ async def delete_recorded_workflow(workflow_id: str, request: Request):
 
 
 @app.post("/workflows/{workflow_id}/run")
-async def prepare_workflow_run(workflow_id: str, request: Request):
+async def prepare_workflow_run(workflow_id: str, request: Request, payload: WorkflowRunRequest | None = None):
     require_http_auth(request)
     workflow = await asyncio.to_thread(get_workflow, workflow_id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found.")
+    variables = (payload.variables if payload else {})
+    prompt = workflow["prompt_template"]
+    missing = []
+
+    def replace_variable(match: re.Match[str]) -> str:
+        key = match.group(1).strip()
+        if key not in variables:
+            missing.append(key)
+            return match.group(0)
+        return variables[key]
+
+    prompt = re.sub(r"\{\{\s*([^}]+?)\s*\}\}", replace_variable, prompt)
+    if payload is not None and missing:
+        raise HTTPException(status_code=422, detail={"missing_variables": sorted(set(missing))})
+
     return {
         "workflow_id": workflow_id,
-        "prompt": workflow["prompt_template"],
+        "prompt": prompt,
         "steps": workflow["steps"],
+        "variables": variables,
     }
 
 

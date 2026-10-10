@@ -176,6 +176,10 @@ class WorkflowCreateRequest(BaseModel):
     source_run_id: str | None = None
 
 
+class WorkflowRunRequest(BaseModel):
+    variables: dict[str, str] = Field(default_factory=dict)
+
+
 class WorkflowRecord(BaseModel):
     id: str
     name: str
