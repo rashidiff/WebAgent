@@ -97,7 +97,7 @@ if _cors_origins:
 def require_http_auth(request: Request) -> None:
     if not AUTH_TOKEN:
         return
-    supplied = request.headers.get("X-Agent-Token") or request.query_params.get("token")
+    supplied = request.headers.get("X-Agent-Token")
     if supplied != AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing local agent token.")
 

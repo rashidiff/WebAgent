@@ -255,14 +255,24 @@ async function loadRunReplays() {
 }
 
 async function openRunReplay(runId) {
+  const replayWindow = window.open("about:blank", "_blank");
   try {
     const response = await fetch(`${backendUrl}/runs/${encodeURIComponent(runId)}`, authFetchOptions());
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const run = await response.json();
     const steps = (run.steps || []).map((step) => `- **${step.event_type}**: ${step.title}`).join("\n");
     appendMessage("assistant", `Replay ${run.id}\n\n**Prompt:** ${run.prompt}\n\n${steps}`);
-    window.open(`${backendUrl}/runs/${encodeURIComponent(runId)}/export?format=html${authToken ? `&token=${encodeURIComponent(authToken)}` : ""}`, "_blank");
+    const exportResponse = await fetch(
+      `${backendUrl}/runs/${encodeURIComponent(runId)}/export?format=html`,
+      authFetchOptions()
+    );
+    if (!exportResponse.ok) throw new Error(`Export HTTP ${exportResponse.status}`);
+    const exportBlob = await exportResponse.blob();
+    const exportUrl = URL.createObjectURL(exportBlob);
+    if (replayWindow) replayWindow.location = exportUrl;
+    setTimeout(() => URL.revokeObjectURL(exportUrl), 60_000);
   } catch (err) {
+    if (replayWindow) replayWindow.close();
     appendMessage("assistant", `Error loading replay: ${err.message}`);
   }
 }

@@ -139,7 +139,7 @@ Every WebSocket connection is logged as a session in `backend/agent_history.db` 
 - `GET /workflows` / `POST /workflows` / `POST /workflows/{id}/run` / `DELETE /workflows/{id}` — manages saved workflow templates.
 - `POST /evals/run` / `GET /evals` — runs and lists local evaluation smoke results.
 
-If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings.
+If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings. HTTP authentication never accepts tokens in query strings; replay exports are fetched with an authenticated header and opened from a temporary local blob URL.
 
 ---
 
