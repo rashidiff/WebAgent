@@ -112,7 +112,7 @@ browser-agent/
 4. Select the `browser-agent/extension` folder.
 5. Pin the **Web Browser AI Agent** extension to your toolbar.
 
-The extension uses `activeTab`, `scripting`, `tabs`, and broad host access so it can keep acting after agent-driven cross-origin navigation in the active tab. Sensitive actions are still gated by the local approval guard.
+The extension uses `activeTab`, `scripting`, and `tabs`. Host access is optional and can be granted at runtime rather than being enabled for every website at install time. Sensitive actions are still gated by the local approval guard and each browser response is bound to a short-lived per-action capability token.
 The current extension defaults wait about `900ms` after tab-level navigation and `700ms` after DOM actions before re-reading the page state.
 
 ---

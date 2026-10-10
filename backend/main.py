@@ -186,11 +186,18 @@ def render_run_html(run: dict) -> str:
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    if not websocket_authorized(websocket):
-        await websocket.close(code=1008)
+    await websocket.accept()
+
+    try:
+        auth_packet = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        await websocket.close(code=1008, reason="Authentication handshake required")
         return
 
-    await websocket.accept()
+    if auth_packet.get("type") != "auth" or auth_packet.get("token", "") != AUTH_TOKEN:
+        await websocket.close(code=1008, reason="Invalid authentication handshake")
+        return
+
     logger.info("Extension sidepanel connected")
     
     coordinator = SessionCoordinator(websocket)

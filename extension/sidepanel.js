@@ -54,6 +54,7 @@ function connectWS() {
     wsStatus.className = "connected";
     document.getElementById('status-dot').className = "status-indicator connected";
     console.log("WebSocket connection established");
+    socket.send(JSON.stringify({ type: "auth", token: authToken }));
   };
   
   socket.onclose = () => {
@@ -537,6 +538,7 @@ function sendResult(actionContext, payload) {
       type: "action_result",
       run_id: actionContext.run_id,
       action_id: actionContext.action_id,
+      capability_token: actionContext.capability_token,
       ...payload
     }));
   }

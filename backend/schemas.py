@@ -69,6 +69,7 @@ class ActionResultEvent(BaseModel):
     status: Literal["success", "error"]
     run_id: str | None = None
     action_id: str | None = None
+    capability_token: str | None = None
     dom_tree: list[InteractiveDomElement] = Field(default_factory=list)
     page_text: PageTextPayload | None = None
     screenshot_before: str | None = None
@@ -86,6 +87,7 @@ class AgentActionEvent(BaseModel):
     action: BrowserAction
     run_id: str
     action_id: str
+    capability_token: str
     selector: str | None = None
     value: str | None = None
     expected_fingerprint: str = ""

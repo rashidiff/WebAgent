@@ -144,16 +144,19 @@ class AgentCoreTests(unittest.TestCase):
                 while not sent_packets:
                     await asyncio.sleep(0)
                 action_id = sent_packets[0]["action_id"]
+                capability_token = sent_packets[0]["capability_token"]
                 await coordinator.response_queue.put({
                     "status": "success",
                     "run_id": "run-current",
                     "action_id": "stale-action",
+                    "capability_token": "stale-capability",
                     "dom_tree": [{"selector": "stale"}],
                 })
                 await coordinator.response_queue.put({
                     "status": "success",
                     "run_id": "run-current",
                     "action_id": action_id,
+                    "capability_token": capability_token,
                     "dom_tree": [{"selector": "fresh"}],
                 })
 
