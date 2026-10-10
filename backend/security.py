@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 import ipaddress
+import fnmatch
 from urllib.parse import urlparse
 
 
 BLOCKED_SCHEMES = {"javascript", "data", "file", "blob", "about", "chrome", "chrome-extension"}
+
+
+def is_allowed_websocket_origin(origin: str | None, allowed_patterns: list[str]) -> bool:
+    """Allow only explicitly configured browser extension origins."""
+    if not origin:
+        return False
+    return any(fnmatch.fnmatchcase(origin, pattern) for pattern in allowed_patterns)
 
 
 def validate_navigation_url(url: str, allow_private_networks: bool = False) -> tuple[bool, str]:

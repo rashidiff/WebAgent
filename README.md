@@ -142,6 +142,8 @@ Every WebSocket connection is logged as a session in `backend/agent_history.db` 
 
 If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings. HTTP authentication never accepts tokens in query strings; replay exports are fetched with an authenticated header and opened from a temporary local blob URL.
 
+WebSocket connections are restricted to `WS_ALLOWED_ORIGINS` (default: `chrome-extension://*`). If you package the extension with a fixed ID, set this to the exact `chrome-extension://<extension-id>` origin.
+
 ---
 
 ## 🧪 Local Evaluation

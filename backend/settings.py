@@ -38,11 +38,16 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     agent_auth_token: str = Field(default="", alias="AGENT_AUTH_TOKEN")
     cors_allowed_origins: str = Field(default="", alias="CORS_ALLOWED_ORIGINS")
+    ws_allowed_origins: str = Field(default="chrome-extension://*", alias="WS_ALLOWED_ORIGINS")
     agent_db_path: str | None = Field(default=None, alias="AGENT_DB_PATH")
 
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def websocket_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.ws_allowed_origins.split(",") if origin.strip()]
 
 
 @lru_cache(maxsize=1)

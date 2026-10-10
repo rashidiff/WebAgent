@@ -41,6 +41,7 @@ from backend.schemas import (
     WorkflowRecord,
 )
 from backend.settings import get_settings
+from backend.security import is_allowed_websocket_origin
 
 load_dotenv(override=True)
 settings = get_settings()
@@ -100,13 +101,6 @@ def require_http_auth(request: Request) -> None:
     supplied = request.headers.get("X-Agent-Token")
     if supplied != AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing local agent token.")
-
-
-def websocket_authorized(websocket: WebSocket) -> bool:
-    if not AUTH_TOKEN:
-        return True
-    supplied = websocket.query_params.get("token")
-    return supplied == AUTH_TOKEN
 
 
 def render_run_markdown(run: dict) -> str:
@@ -186,6 +180,9 @@ def render_run_html(run: dict) -> str:
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    if not is_allowed_websocket_origin(websocket.headers.get("origin"), settings.websocket_origins):
+        await websocket.close(code=1008, reason="Origin is not allowed")
+        return
     await websocket.accept()
 
     try:
