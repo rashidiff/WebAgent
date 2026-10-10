@@ -37,8 +37,9 @@ class Settings(BaseSettings):
     port: int = Field(default=8000, alias="PORT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     agent_auth_token: str = Field(default="", alias="AGENT_AUTH_TOKEN")
+    auth_required: bool = Field(default=True, alias="AUTH_REQUIRED")
     cors_allowed_origins: str = Field(default="", alias="CORS_ALLOWED_ORIGINS")
-    ws_allowed_origins: str = Field(default="chrome-extension://*", alias="WS_ALLOWED_ORIGINS")
+    ws_allowed_origins: str = Field(default="", alias="WS_ALLOWED_ORIGINS")
     agent_db_path: str | None = Field(default=None, alias="AGENT_DB_PATH")
 
     @property

@@ -56,8 +56,14 @@ AUTH_TOKEN = settings.agent_auth_token.strip()
 
 
 def validate_startup_security() -> None:
-    """Prevent an accidentally unauthenticated non-local deployment."""
+    """Fail closed unless local development was explicitly opted into."""
     local_hosts = {"127.0.0.1", "localhost", "::1"}
+    if settings.auth_required and not AUTH_TOKEN:
+        raise RuntimeError("AGENT_AUTH_TOKEN is required when AUTH_REQUIRED=true.")
+    if settings.auth_required and not settings.websocket_origins:
+        raise RuntimeError("WS_ALLOWED_ORIGINS must contain the exact Chrome extension origin when AUTH_REQUIRED=true.")
+    if settings.auth_required and any("*" in origin for origin in settings.websocket_origins):
+        raise RuntimeError("Wildcard WS_ALLOWED_ORIGINS are forbidden when AUTH_REQUIRED=true.")
     if settings.host not in local_hosts and not AUTH_TOKEN:
         raise RuntimeError(
             "AGENT_AUTH_TOKEN is required when HOST is not localhost. "
@@ -96,7 +102,7 @@ if _cors_origins:
 
 
 def require_http_auth(request: Request) -> None:
-    if not AUTH_TOKEN:
+    if not settings.auth_required:
         return
     supplied = request.headers.get("X-Agent-Token")
     if supplied != AUTH_TOKEN:
@@ -180,7 +186,7 @@ def render_run_html(run: dict) -> str:
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    if not is_allowed_websocket_origin(websocket.headers.get("origin"), settings.websocket_origins):
+    if settings.auth_required and not is_allowed_websocket_origin(websocket.headers.get("origin"), settings.websocket_origins):
         await websocket.close(code=1008, reason="Origin is not allowed")
         return
     await websocket.accept()
@@ -191,7 +197,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=1008, reason="Authentication handshake required")
         return
 
-    if auth_packet.get("type") != "auth" or auth_packet.get("token", "") != AUTH_TOKEN:
+    if auth_packet.get("type") != "auth" or (settings.auth_required and auth_packet.get("token", "") != AUTH_TOKEN):
         await websocket.close(code=1008, reason="Invalid authentication handshake")
         return
 

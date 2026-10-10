@@ -92,11 +92,14 @@ browser-agent/
    ACTION_TIMEOUT_SECONDS=40
    MAX_DOM_ELEMENTS=150
    REQUIRE_ACTION_APPROVAL=true
+   AUTH_REQUIRED=true
+   AGENT_AUTH_TOKEN=generate_a_long_random_token
+   WS_ALLOWED_ORIGINS=chrome-extension://your_extension_id
    DEEPSEEK_API_KEY=your_deepseek_api_key_here
    ```
    Only the API key matching your chosen `LLM_PROVIDER` (`gemini`, `openai`, `anthropic`, or `deepseek`) is required. `MAX_AGENT_STEPS` counts executed browser tool calls, and `MAX_DOM_ELEMENTS=150` should stay aligned with the extension-side DOM capture budget. See `.env.example` for the full list of supported variables.
 
-   If you change `HOST` away from localhost, `AGENT_AUTH_TOKEN` becomes mandatory and the backend refuses to start without it. Use a long random token and do not share it in screenshots, URLs, or source control.
+   Authentication is mandatory by default, even on localhost. Set `WS_ALLOWED_ORIGINS` to the exact extension origin displayed by Chrome. `AUTH_REQUIRED=false` is only for isolated automated tests; do not use it in an interactive browser session.
 
 5. **Start the server**:
    ```bash
@@ -143,7 +146,7 @@ Every WebSocket connection is logged as a session in `backend/agent_history.db` 
 
 If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings. HTTP authentication never accepts tokens in query strings; replay exports are fetched with an authenticated header and opened from a temporary local blob URL.
 
-WebSocket connections are restricted to `WS_ALLOWED_ORIGINS` (default: `chrome-extension://*`). If you package the extension with a fixed ID, set this to the exact `chrome-extension://<extension-id>` origin.
+WebSocket connections are restricted to the exact `WS_ALLOWED_ORIGINS` extension origin. Wildcards are rejected while authentication is enabled.
 
 The sidepanel stores the backend URL persistently, but keeps `AGENT_AUTH_TOKEN` in Chrome session storage so it is discarded when the browser session ends.
 

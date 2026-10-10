@@ -10,11 +10,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from backend import agent, database
 from backend.evaluation import run_evaluation_suite
 from backend.agent import SessionCoordinator, tool_signature
+from backend import main
 from backend.main import app
 from backend.settings import Settings
 from backend.security import is_allowed_websocket_origin, validate_navigation_url
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
+
+# API unit tests intentionally exercise an in-process unauthenticated test app.
+main.settings.auth_required = False
 
 
 class AgentCoreTests(unittest.TestCase):
