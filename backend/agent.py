@@ -116,6 +116,7 @@ class SessionCoordinator:
         self.websocket = websocket
         self.current_dom: List[Dict[str, Any]] = []
         self.response_queue = asyncio.Queue()
+        self.approval_queue = asyncio.Queue()
         self.is_running = True
         self.agent_task = None
         self.history = HistoryStore()
@@ -194,24 +195,31 @@ class SessionCoordinator:
         capability_token = secrets.token_urlsafe(32)
         self.pending_capabilities[action_id] = capability_token
 
-        # Send action to extension via WebSocket
-        await self.websocket.send_json(
-            AgentActionEvent(
-                type="agent_action",
-                action=action,
-                run_id=self.current_run_id,
-                action_id=action_id,
-                capability_token=capability_token,
-                capture_screenshots=settings.capture_screenshots,
-                selector=selector,
-                value=value,
-                expected_fingerprint=expected_fingerprint,
-                requires_approval=bool(approval_reason),
-                approval_reason=approval_reason,
-                risk_level=risk["risk_level"],
-                target_summary=risk["target_summary"],
-            ).model_dump()
+        action_event = AgentActionEvent(
+            type="agent_action" if approval_reason else "agent_execute",
+            action=action,
+            run_id=self.current_run_id,
+            action_id=action_id,
+            capability_token=capability_token,
+            capture_screenshots=settings.capture_screenshots,
+            selector=selector,
+            value=value,
+            expected_fingerprint=expected_fingerprint,
+            requires_approval=bool(approval_reason),
+            approval_reason=approval_reason,
+            risk_level=risk["risk_level"],
+            target_summary=risk["target_summary"],
         )
+        await self.websocket.send_json(action_event.model_dump())
+
+        if approval_reason:
+            approved = await self.wait_for_approval(action_id, capability_token)
+            if not approved:
+                self.pending_capabilities.pop(action_id, None)
+                return "Error: User rejected the required browser action approval."
+            await self.websocket.send_json(
+                action_event.model_copy(update={"type": "agent_execute", "requires_approval": False}).model_dump()
+            )
         
         # Await response from content script with timeout
         try:
@@ -293,6 +301,22 @@ class SessionCoordinator:
                 continue
             self.pending_capabilities.pop(action_id, None)
             return response
+
+    async def wait_for_approval(self, action_id: str, capability_token: str) -> bool:
+        """Only the matching approval response can release a sensitive action."""
+        deadline = asyncio.get_running_loop().time() + DEFAULT_ACTION_TIMEOUT_SECONDS
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+            response = await asyncio.wait_for(self.approval_queue.get(), timeout=remaining)
+            if response.get("action_id") != action_id or response.get("run_id") != self.current_run_id:
+                logger.warning("Ignoring stale approval response")
+                continue
+            if response.get("capability_token") != capability_token:
+                logger.warning("Ignoring approval response with invalid capability token")
+                continue
+            return bool(response.get("approved"))
 
     def get_approval_reason(self, action: str, selector: str = None, value: str = None) -> str:
         if not REQUIRE_ACTION_APPROVAL:

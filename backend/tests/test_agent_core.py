@@ -175,6 +175,27 @@ class AgentCoreTests(unittest.TestCase):
         self.assertIn("Success: Action executed", result)
         self.assertEqual(coordinator.current_dom, [{"selector": "fresh"}])
 
+    def test_approval_requires_matching_action_and_capability(self):
+        coordinator = SessionCoordinator(websocket=None)
+        coordinator.current_run_id = "run-current"
+
+        async def run():
+            await coordinator.approval_queue.put({
+                "run_id": "run-current",
+                "action_id": "wrong-action",
+                "capability_token": "capability",
+                "approved": True,
+            })
+            await coordinator.approval_queue.put({
+                "run_id": "run-current",
+                "action_id": "action-1",
+                "capability_token": "capability",
+                "approved": True,
+            })
+            return await coordinator.wait_for_approval("action-1", "capability")
+
+        self.assertTrue(asyncio.run(run()))
+
     def test_final_response_without_tool_call_does_not_hit_step_limit(self):
         coordinator = SessionCoordinator(websocket=None)
         statuses = []

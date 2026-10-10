@@ -29,6 +29,7 @@ from backend.database import (
 from backend.evaluation import run_evaluation_suite
 from backend.schemas import (
     ActionResultEvent,
+    ApprovalResponseEvent,
     EvalListResponse,
     RunDetail,
     RunListResponse,
@@ -246,6 +247,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.warning("Ignoring stale action result for run_id=%s", action_result.run_id)
                     continue
                 await coordinator.response_queue.put(action_result.model_dump(exclude_none=True))
+
+            elif event_type == "approval_response":
+                approval = ApprovalResponseEvent.model_validate(data)
+                if approval.run_id != coordinator.current_run_id:
+                    logger.warning("Ignoring approval response for stale run_id=%s", approval.run_id)
+                    continue
+                await coordinator.approval_queue.put(approval.model_dump())
                 
             elif event_type == "stop_agent":
                 coordinator.is_running = False

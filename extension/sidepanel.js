@@ -82,15 +82,14 @@ function connectWS() {
       } else if (data.type === 'agent_action') {
         updateLog(`Agent Action: ${data.action} on ${data.selector || 'page'}`);
         appendTimeline("action", `${data.action}${data.selector ? ` ${data.selector}` : ""}${data.value ? ` -> ${data.value}` : ""}`);
+        const approved = await requestActionApproval(data);
+        sendApprovalResponse(data, approved);
+        updateLog(approved ? "Approval granted. Waiting for backend execution grant..." : "Action rejected by user.");
+        return;
 
-        if (data.requires_approval) {
-          const approved = await requestActionApproval(data);
-          if (!approved) {
-            sendResult(data, { status: "error", error: `User rejected action: ${data.approval_reason || data.action}` });
-            updateLog("Action rejected by user.");
-            return;
-          }
-        }
+      } else if (data.type === 'agent_execute') {
+        updateLog(`Executing authorized action: ${data.action} on ${data.selector || 'page'}`);
+        appendTimeline("action", `${data.action}${data.selector ? ` ${data.selector}` : ""}${data.value ? ` -> ${data.value}` : ""}`);
         
         const tab = await getActiveTab();
         if (!tab) {
@@ -550,6 +549,18 @@ function sendResult(actionContext, payload) {
       action_id: actionContext.action_id,
       capability_token: actionContext.capability_token,
       ...payload
+    }));
+  }
+}
+
+function sendApprovalResponse(actionContext, approved) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({
+      type: "approval_response",
+      run_id: actionContext.run_id,
+      action_id: actionContext.action_id,
+      capability_token: actionContext.capability_token,
+      approved: Boolean(approved)
     }));
   }
 }

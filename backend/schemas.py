@@ -84,7 +84,7 @@ class AgentStatusEvent(BaseModel):
 
 
 class AgentActionEvent(BaseModel):
-    type: Literal["agent_action"]
+    type: Literal["agent_action", "agent_execute"]
     action: BrowserAction
     run_id: str
     action_id: str
@@ -97,6 +97,14 @@ class AgentActionEvent(BaseModel):
     approval_reason: str = ""
     risk_level: str = "low"
     target_summary: str = ""
+
+
+class ApprovalResponseEvent(BaseModel):
+    type: Literal["approval_response"]
+    run_id: str
+    action_id: str
+    capability_token: str
+    approved: bool
 
 
 class SessionSummary(BaseModel):
