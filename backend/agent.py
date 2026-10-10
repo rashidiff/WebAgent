@@ -252,7 +252,7 @@ class SessionCoordinator:
             response_action_id = response.get("action_id")
             response_run_id = response.get("run_id")
 
-            if response_action_id and response_action_id != action_id:
+            if response_action_id != action_id:
                 logger.warning("Ignoring stale action result for action_id=%s", response_action_id)
                 continue
             if response_run_id and response_run_id != self.current_run_id:
