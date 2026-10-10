@@ -77,7 +77,8 @@ function isSensitiveElement(el) {
     el.getAttribute("aria-label"),
     el.getAttribute("placeholder")
   ].filter(Boolean).join(" ").toLowerCase();
-  return type === "password" || /password|passcode|secret|token|api[ -]?key|cvv|cvc|card number|ssn/.test(metadata);
+  return ["password", "email", "tel", "number"].includes(type)
+    || /password|passcode|secret|token|api[ -]?key|cvv|cvc|card number|ssn|email|phone|mobile/.test(metadata);
 }
 
 function getSameOriginFrameDocument(frame) {

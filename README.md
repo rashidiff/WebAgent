@@ -25,6 +25,7 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 - **Local Evaluation Suite**: Ships with mock form, shop, table, modal, and fake-login pages plus a smoke-test runner that emits JSON/Markdown-ready benchmark summaries.
 - **Sensitive Value Redaction**: Credential-like input values are redacted before browser actions are written to local history.
 - **Credential-Safe DOM Capture**: Password, token, API-key, card, and similar field values are omitted before DOM data is sent to the model.
+- **PII-Safe DOM Capture**: Existing email, telephone, numeric, credential, and payment-like values are omitted before page state is sent to the model.
 - **Privacy-First Screenshots**: Replay screenshots are disabled by default and require explicit `CAPTURE_SCREENSHOTS=true` opt-in.
 - **Optional Local Auth**: Set `AGENT_AUTH_TOKEN` to protect the WebSocket and session history endpoints on shared machines.
 

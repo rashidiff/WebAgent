@@ -55,13 +55,13 @@ class InteractiveDomElement(BaseModel):
 class PageTextPayload(BaseModel):
     title: str | None = None
     url: str | None = None
-    text: str | None = None
+    text: str | None = Field(default=None, max_length=6000)
 
 
 class UserInputEvent(BaseModel):
     type: Literal["user_input"]
     prompt: str = Field(min_length=1, max_length=8000)
-    dom_tree: list[InteractiveDomElement] = Field(default_factory=list)
+    dom_tree: list[InteractiveDomElement] = Field(default_factory=list, max_length=150)
 
 
 class ActionResultEvent(BaseModel):
@@ -72,8 +72,8 @@ class ActionResultEvent(BaseModel):
     capability_token: str | None = None
     dom_tree: list[InteractiveDomElement] = Field(default_factory=list)
     page_text: PageTextPayload | None = None
-    screenshot_before: str | None = None
-    screenshot_after: str | None = None
+    screenshot_before: str | None = Field(default=None, max_length=2_000_000)
+    screenshot_after: str | None = Field(default=None, max_length=2_000_000)
     error: str | None = None
 
 
@@ -175,7 +175,7 @@ class RunListResponse(BaseModel):
 class WorkflowCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     prompt_template: str = Field(min_length=1)
-    steps: list[dict[str, Any]] = Field(default_factory=list)
+    steps: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
     source_run_id: str | None = None
 
 

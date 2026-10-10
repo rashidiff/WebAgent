@@ -43,10 +43,7 @@ function connectWS() {
   wsStatus.className = "connecting";
   document.getElementById('status-dot').className = "status-indicator";
   
-  let wsUrl = backendUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:").replace(/\/$/, "") + "/ws";
-  if (authToken) {
-    wsUrl += `?token=${encodeURIComponent(authToken)}`;
-  }
+  const wsUrl = backendUrl.replace(/^http:/, "ws:").replace(/^https:/, "wss:").replace(/\/$/, "") + "/ws";
   socket = new WebSocket(wsUrl);
   
   socket.onopen = () => {

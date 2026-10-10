@@ -755,7 +755,7 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                     tool_id = tool_call["id"]
                     signature = tool_signature(tool_name, tool_args)
                     
-                    logger.info("Executing tool %s with args %s", tool_name, tool_args)
+                    logger.info("Executing tool %s", tool_name)
                     await coordinator.send_status(
                         f"PLAN: Step {executed_steps}/{max_steps}: {tool_name} with {tool_args}. Verifying after execution."
                     )
