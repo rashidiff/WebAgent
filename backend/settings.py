@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     max_actions_per_minute: int = Field(default=30, alias="MAX_ACTIONS_PER_MINUTE", ge=1, le=600)
     allow_private_networks: bool = Field(default=False, alias="ALLOW_PRIVATE_NETWORKS")
     capture_screenshots: bool = Field(default=False, alias="CAPTURE_SCREENSHOTS")
+    history_retention_days: int = Field(default=7, alias="HISTORY_RETENTION_DAYS", ge=0, le=365)
+    max_websocket_message_bytes: int = Field(default=512_000, alias="MAX_WEBSOCKET_MESSAGE_BYTES", ge=4_096, le=10_000_000)
 
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")

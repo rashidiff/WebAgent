@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -422,6 +423,25 @@ class DatabaseTests(unittest.TestCase):
             asyncio.run(seed_sessions())
 
             self.assertEqual(database.clear_sessions(), 2)
+            self.assertEqual(database.count_sessions(), 0)
+
+    def test_prune_history_removes_expired_session_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            database.DB_PATH = os.path.join(tmp, "history.db")
+            database.init_db()
+            store = database.HistoryStore()
+
+            async def seed_history():
+                await store.start_session()
+                await store.log_message("user", "old message")
+
+            asyncio.run(seed_history())
+            conn = sqlite3.connect(database.DB_PATH)
+            conn.execute("UPDATE sessions SET started_at = ? WHERE id = ?", ("2000-01-01T00:00:00+00:00", store.session_id))
+            conn.commit()
+            conn.close()
+
+            self.assertEqual(database.prune_history(7), 1)
             self.assertEqual(database.count_sessions(), 0)
 
     def test_run_steps_round_trip_with_metadata(self):

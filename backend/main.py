@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import re
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from backend.database import (
     get_session_history,
     get_workflow,
     init_db,
+    prune_history,
     list_runs,
     list_sessions,
     list_eval_results,
@@ -76,6 +78,9 @@ def validate_startup_security() -> None:
 async def lifespan(app: FastAPI):
     validate_startup_security()
     init_db()
+    deleted = prune_history(settings.history_retention_days)
+    if deleted:
+        logger.info("Pruned %s expired session(s)", deleted)
     yield
 
 
@@ -108,6 +113,16 @@ def require_http_auth(request: Request) -> None:
     supplied = request.headers.get("X-Agent-Token")
     if supplied != AUTH_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid or missing local agent token.")
+
+
+async def receive_websocket_json(websocket: WebSocket) -> dict:
+    raw_message = await websocket.receive_text()
+    if len(raw_message.encode("utf-8")) > settings.max_websocket_message_bytes:
+        raise ValueError("WebSocket message exceeds configured size limit.")
+    payload = json.loads(raw_message)
+    if not isinstance(payload, dict):
+        raise ValueError("WebSocket payload must be a JSON object.")
+    return payload
 
 
 def render_run_markdown(run: dict) -> str:
@@ -193,8 +208,8 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
 
     try:
-        auth_packet = await asyncio.wait_for(websocket.receive_json(), timeout=10)
-    except (asyncio.TimeoutError, WebSocketDisconnect):
+        auth_packet = await asyncio.wait_for(receive_websocket_json(websocket), timeout=10)
+    except (asyncio.TimeoutError, WebSocketDisconnect, ValueError):
         await websocket.close(code=1008, reason="Authentication handshake required")
         return
 
@@ -210,7 +225,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             # Receive data packets from extension client
-            data = await websocket.receive_json()
+            data = await receive_websocket_json(websocket)
             event_type = data.get("type")
             
             logger.info("WebSocket event received: %s", event_type)
@@ -273,7 +288,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 
     except WebSocketDisconnect:
         logger.info("Extension sidepanel disconnected")
-    except ValidationError as exc:
+    except (ValidationError, ValueError) as exc:
         logger.warning("Rejected invalid WebSocket payload: %s", exc)
         await websocket.close(code=1003, reason="Invalid payload")
     except Exception as e:

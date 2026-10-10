@@ -2,7 +2,7 @@ from pathlib import Path
 import sqlite3
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from typing import Any, Dict, List, Optional
 
@@ -104,6 +104,28 @@ def init_db() -> None:
         _ensure_column(conn, "runs", "plan", "TEXT")
         _ensure_column(conn, "run_steps", "metadata_json", "TEXT")
         conn.commit()
+    finally:
+        conn.close()
+
+
+def prune_history(retention_days: int) -> int:
+    """Delete expired session-linked records to limit local sensitive-data retention."""
+    if retention_days <= 0:
+        return 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    conn = _get_connection()
+    try:
+        session_ids = [row[0] for row in conn.execute("SELECT id FROM sessions WHERE started_at < ?", (cutoff,))]
+        if not session_ids:
+            return 0
+        placeholders = ",".join("?" for _ in session_ids)
+        conn.execute(f"DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE session_id IN ({placeholders}))", session_ids)
+        conn.execute(f"DELETE FROM runs WHERE session_id IN ({placeholders})", session_ids)
+        conn.execute(f"DELETE FROM messages WHERE session_id IN ({placeholders})", session_ids)
+        conn.execute(f"DELETE FROM actions WHERE session_id IN ({placeholders})", session_ids)
+        conn.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", session_ids)
+        conn.commit()
+        return len(session_ids)
     finally:
         conn.close()
 
