@@ -92,6 +92,8 @@ browser-agent/
    ```
    Only the API key matching your chosen `LLM_PROVIDER` (`gemini`, `openai`, `anthropic`, or `deepseek`) is required. `MAX_AGENT_STEPS` counts executed browser tool calls, and `MAX_DOM_ELEMENTS=150` should stay aligned with the extension-side DOM capture budget. See `.env.example` for the full list of supported variables.
 
+   If you change `HOST` away from localhost, `AGENT_AUTH_TOKEN` becomes mandatory and the backend refuses to start without it. Use a long random token and do not share it in screenshots, URLs, or source control.
+
 5. **Start the server**:
    ```bash
    python -m backend.main

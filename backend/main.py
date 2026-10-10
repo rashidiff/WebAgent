@@ -52,8 +52,19 @@ logger = logging.getLogger("browser_agent.main")
 AUTH_TOKEN = settings.agent_auth_token.strip()
 
 
+def validate_startup_security() -> None:
+    """Prevent an accidentally unauthenticated non-local deployment."""
+    local_hosts = {"127.0.0.1", "localhost", "::1"}
+    if settings.host not in local_hosts and not AUTH_TOKEN:
+        raise RuntimeError(
+            "AGENT_AUTH_TOKEN is required when HOST is not localhost. "
+            "Refusing to start an unauthenticated remote browser-control server."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_startup_security()
     init_db()
     yield
 
