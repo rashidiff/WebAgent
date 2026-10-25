@@ -19,7 +19,7 @@ The agent operates directly on the user's active, logged-in browser session. Ins
 - **Strict Action Correlation**: Browser responses must match both the active run and action ID, preventing delayed packets from an older action from being applied to a newer one.
 - **Replay & Screenshot Grounding**: Every agent run gets a durable replay timeline with plan/action/verify/self-check events, DOM summaries, and before/after screenshots exportable as Markdown or HTML.
 - **Expanded Browser Tools**: Supports navigation, keyboard events, select controls, hover menus, browser history, reload, wait steps, visible page-text reads, clear/double-click/toggle, wait-for-text, modal/download detection, paste, and basic drag/drop.
-- **Risk-Based Approval Guard**: Browser actions are classified as `read_only`, `low`, `medium`, `high`, or `critical`; high-risk actions such as submit, delete, checkout, payment, credential-like input, and account changes require explicit sidepanel approval by default.
+- **Two Access Modes**: Choose **Full access** to run browser actions without interruptions, or **Ask every time** to confirm every action from the sidepanel.
 - **Workflow Library**: Save successful replays as lightweight reusable workflows, reload them into the prompt box, and adjust parameters before running again.
 - **Sidepanel Replay, Workflow & History Viewer**: Configure the backend URL and optional auth token, inspect sessions/replays/workflows, search local records, export replays, and clear local history without leaving the sidepanel.
 - **Local Evaluation Suite**: Ships with mock form, shop, table, modal, and fake-login pages plus a smoke-test runner that emits JSON/Markdown-ready benchmark summaries.
@@ -60,9 +60,10 @@ browser-agent/
 
 ### 1. Run the FastAPI Backend
 
-1. **Navigate to the backend folder**:
+1. **Clone the repository and open its root folder**:
    ```bash
-   cd browser-agent/backend
+   git clone https://github.com/rashidiff/WebAgent.git
+   cd WebAgent
    ```
 
 2. **Create and activate a virtual environment**:
@@ -76,7 +77,7 @@ browser-agent/
 
 3. **Install dependencies**:
    ```bash
-   pip install -r requirements.txt -c constraints.txt
+   pip install -r backend/requirements.txt -c backend/constraints.txt
    ```
    The backend now ships with pinned dependency versions in `constraints.txt` and mirrored project metadata in the repo-level `pyproject.toml`.
 
@@ -92,15 +93,11 @@ browser-agent/
    MAX_AGENT_STEPS=15
    ACTION_TIMEOUT_SECONDS=40
    MAX_DOM_ELEMENTS=150
-   REQUIRE_ACTION_APPROVAL=true
-   AUTH_REQUIRED=true
-   AGENT_AUTH_TOKEN=generate_a_long_random_token
-   WS_ALLOWED_ORIGINS=chrome-extension://your_extension_id
    DEEPSEEK_API_KEY=your_deepseek_api_key_here
    ```
-   Only the API key matching your chosen `LLM_PROVIDER` (`gemini`, `openai`, `anthropic`, or `deepseek`) is required. `MAX_AGENT_STEPS` counts executed browser tool calls, and `MAX_DOM_ELEMENTS=150` should stay aligned with the extension-side DOM capture budget. See `.env.example` for the full list of supported variables.
+   Only the API key matching your chosen `LLM_PROVIDER` (`gemini`, `openai`, `anthropic`, or `deepseek`) is required for local use. `MAX_AGENT_STEPS` counts executed browser tool calls, and `MAX_DOM_ELEMENTS=150` should stay aligned with the extension-side DOM capture budget. See `.env.example` for the full list of supported variables.
 
-   Authentication is mandatory by default, even on localhost. Set `WS_ALLOWED_ORIGINS` to the exact extension origin displayed by Chrome. `AUTH_REQUIRED=false` is only for isolated automated tests; do not use it in an interactive browser session.
+   Localhost runs do not require an extension ID or local auth token. For a shared machine or a non-localhost host, set `AUTH_REQUIRED=true`, generate `AGENT_AUTH_TOKEN`, and set `WS_ALLOWED_ORIGINS` to the exact `chrome-extension://<extension-id>` origin.
 
 5. **Start the server**:
    ```bash
@@ -115,10 +112,10 @@ browser-agent/
 1. Open Google Chrome and navigate to `chrome://extensions/`.
 2. Toggle on **Developer mode** in the top-right corner.
 3. Click **Load unpacked** in the top-left corner.
-4. Select the `browser-agent/extension` folder.
+4. Select the `extension` folder from this repository.
 5. Pin the **Web Browser AI Agent** extension to your toolbar.
 
-The extension uses `activeTab`, `scripting`, and `tabs`. Host access is optional and can be granted at runtime rather than being enabled for every website at install time. Sensitive actions are still gated by the local approval guard and each browser response is bound to a short-lived per-action capability token.
+The extension requests access to regular `http` and `https` websites when it is installed, so no per-site permission prompt is needed. Chrome still protects internal pages such as `chrome://` and the Chrome Web Store. In **Full access** mode (the default), actions run immediately; choose **Ask every time** in the sidepanel Settings to review every action. Each browser response remains bound to a short-lived per-action capability token.
 The current extension defaults wait about `900ms` after tab-level navigation and `700ms` after DOM actions before re-reading the page state.
 
 ---
@@ -145,11 +142,9 @@ Every WebSocket connection is logged as a session in `backend/agent_history.db` 
 - `GET /workflows` / `POST /workflows` / `POST /workflows/{id}/run` / `DELETE /workflows/{id}` — manages saved workflow templates.
 - `POST /evals/run` / `GET /evals` — runs and lists local evaluation smoke results.
 
-If `AGENT_AUTH_TOKEN` is set, pass it as `X-Agent-Token` or configure the same token in the sidepanel settings. HTTP authentication never accepts tokens in query strings; replay exports are fetched with an authenticated header and opened from a temporary local blob URL.
+When `AUTH_REQUIRED=true`, pass `AGENT_AUTH_TOKEN` as `X-Agent-Token` or configure the same token in the sidepanel settings. HTTP authentication never accepts tokens in query strings; replay exports are fetched with an authenticated header and opened from a temporary local blob URL. In that mode, WebSocket connections are restricted to the exact `WS_ALLOWED_ORIGINS` extension origin; wildcards are rejected.
 
-WebSocket connections are restricted to the exact `WS_ALLOWED_ORIGINS` extension origin. Wildcards are rejected while authentication is enabled.
-
-The sidepanel stores the backend URL persistently, but keeps `AGENT_AUTH_TOKEN` in Chrome session storage so it is discarded when the browser session ends.
+The sidepanel stores the backend URL and access mode persistently, but keeps `AGENT_AUTH_TOKEN` in Chrome session storage so it is discarded when the browser session ends.
 
 ---
 

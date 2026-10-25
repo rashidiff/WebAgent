@@ -13,6 +13,7 @@ from backend.evaluation import run_evaluation_suite
 from backend.agent import SessionCoordinator, tool_signature
 from backend import main
 from backend.main import app
+from backend.schemas import AuthEvent
 from backend.settings import Settings
 from backend.security import redact_for_llm, redact_url_for_llm, is_allowed_websocket_origin, validate_element_navigation, validate_navigation_url
 from fastapi.testclient import TestClient
@@ -42,8 +43,8 @@ class AgentCoreTests(unittest.TestCase):
         self.assertIn("aria-label: \"Account email\"", text)
         self.assertIn("fingerprint: abc123", text)
 
-    def test_sensitive_action_requires_approval(self):
-        coordinator = SessionCoordinator(websocket=None)
+    def test_ask_every_time_requires_approval_for_sensitive_action(self):
+        coordinator = SessionCoordinator(websocket=None, approval_mode="ask_every_time")
         coordinator.current_dom = [
             {
                 "selector": "[data-agent-id=\"2\"]",
@@ -55,6 +56,20 @@ class AgentCoreTests(unittest.TestCase):
         reason = coordinator.get_approval_reason("click", "[data-agent-id=\"2\"]")
 
         self.assertIn("HIGH risk browser action", reason)
+
+    def test_full_access_executes_without_approval(self):
+        coordinator = SessionCoordinator(websocket=None, approval_mode="full_access")
+
+        self.assertEqual(coordinator.get_approval_reason("navigate", value="https://example.com"), "")
+        self.assertEqual(coordinator.get_approval_reason("click", selector="[data-agent-id=\"1\"]"), "")
+
+    def test_ask_every_time_requires_approval_for_all_risk_levels(self):
+        coordinator = SessionCoordinator(websocket=None, approval_mode="ask_every_time")
+        coordinator.current_dom = [{"selector": "[data-agent-id=\"1\"]", "text": "Search", "tagName": "BUTTON"}]
+
+        self.assertIn("READ_ONLY risk", coordinator.get_approval_reason("get_text"))
+        self.assertIn("LOW risk", coordinator.get_approval_reason("click", "[data-agent-id=\"1\"]"))
+        self.assertIn("HIGH risk", coordinator.get_approval_reason("navigate", value="https://example.com"))
 
     def test_risk_classification_marks_payment_as_critical(self):
         coordinator = SessionCoordinator(websocket=None)
@@ -175,6 +190,7 @@ class AgentCoreTests(unittest.TestCase):
 
         self.assertIn("Success: Action executed", result)
         self.assertEqual(coordinator.current_dom, [{"selector": "fresh"}])
+        self.assertEqual(sent_packets[0]["type"], "agent_execute")
 
     def test_approval_requires_matching_action_and_capability(self):
         coordinator = SessionCoordinator(websocket=None)
@@ -486,6 +502,38 @@ class DatabaseTests(unittest.TestCase):
 
 
 class SettingsTests(unittest.TestCase):
+    def test_auth_handshake_accepts_known_approval_modes_and_rejects_unknown(self):
+        self.assertEqual(
+            AuthEvent.model_validate({"type": "auth", "approval_mode": "ask_every_time"}).approval_mode,
+            "ask_every_time",
+        )
+        with self.assertRaises(Exception):
+            AuthEvent.model_validate({"type": "auth", "approval_mode": "always_allow"})
+
+    def test_local_startup_defaults_do_not_require_token_or_extension_origin(self):
+        settings = Settings()
+        self.assertFalse(settings.auth_required)
+        self.assertEqual(settings.websocket_origins, [])
+
+    def test_explicit_auth_mode_remains_fail_closed(self):
+        original_auth_required = main.settings.auth_required
+        original_origins = main.settings.ws_allowed_origins
+        original_token = main.AUTH_TOKEN
+        try:
+            main.settings.auth_required = True
+            main.settings.ws_allowed_origins = ""
+            main.AUTH_TOKEN = ""
+            with self.assertRaises(RuntimeError):
+                main.validate_startup_security()
+
+            main.settings.ws_allowed_origins = "chrome-extension://example"
+            main.AUTH_TOKEN = "test-token"
+            main.validate_startup_security()
+        finally:
+            main.settings.auth_required = original_auth_required
+            main.settings.ws_allowed_origins = original_origins
+            main.AUTH_TOKEN = original_token
+
     def test_settings_split_cors_origins(self):
         settings = Settings(CORS_ALLOWED_ORIGINS="http://localhost:3000, https://example.com")
 

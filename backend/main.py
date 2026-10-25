@@ -31,6 +31,7 @@ from backend.database import (
 from backend.evaluation import run_evaluation_suite
 from backend.schemas import (
     ActionResultEvent,
+    AuthEvent,
     ApprovalResponseEvent,
     EvalListResponse,
     RunDetail,
@@ -213,13 +214,19 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=1008, reason="Authentication handshake required")
         return
 
-    if auth_packet.get("type") != "auth" or (settings.auth_required and auth_packet.get("token", "") != AUTH_TOKEN):
+    try:
+        auth_event = AuthEvent.model_validate(auth_packet)
+    except ValidationError:
+        await websocket.close(code=1008, reason="Invalid authentication handshake")
+        return
+
+    if settings.auth_required and auth_event.token != AUTH_TOKEN:
         await websocket.close(code=1008, reason="Invalid authentication handshake")
         return
 
     logger.info("Extension sidepanel connected")
     
-    coordinator = SessionCoordinator(websocket)
+    coordinator = SessionCoordinator(websocket, approval_mode=auth_event.approval_mode)
     await coordinator.history.start_session()
 
     try:

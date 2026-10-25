@@ -49,6 +49,11 @@
       <button id="btn-clear-history" type="button">Clear</button>
     </div>
     <input id="history-search-input" class="settings-token-input" type="search" placeholder="Filter history, replays, and workflows">
+    <label for="approval-mode-input" class="settings-token-label">Agent access</label>
+    <select id="approval-mode-input" class="settings-token-input">
+      <option value="full_access">Full access — run actions without confirmation</option>
+      <option value="ask_every_time">Ask every time — confirm each action</option>
+    </select>
     <label for="auth-token-input" class="settings-token-label">Auth Token</label>
     <input id="auth-token-input" class="settings-token-input" type="password" placeholder="Optional AGENT_AUTH_TOKEN">
     <div id="history-list" class="history-list hidden"></div>

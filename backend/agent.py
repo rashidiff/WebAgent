@@ -11,7 +11,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 
 from backend.database import HistoryStore
 from backend.database import add_run_step, create_run, update_run_status
-from backend.schemas import AgentActionEvent, AgentStatusEvent
+from backend.schemas import AgentActionEvent, AgentStatusEvent, ApprovalMode
 from backend.settings import get_settings
 from backend.security import redact_for_llm, redact_url_for_llm, validate_element_navigation, validate_navigation_url
 
@@ -21,13 +21,11 @@ settings = get_settings()
 DEFAULT_ACTION_TIMEOUT_SECONDS = settings.action_timeout_seconds
 DEFAULT_MAX_DOM_ELEMENTS = settings.max_dom_elements
 DEFAULT_MAX_AGENT_STEPS = settings.max_agent_steps
-REQUIRE_ACTION_APPROVAL = settings.require_action_approval
 MAX_ACTIONS_PER_MINUTE = settings.max_actions_per_minute
 SENSITIVE_ACTION_KEYWORDS = [
     "submit", "send", "buy", "purchase", "pay", "checkout", "order", "delete", "remove",
     "confirm", "transfer", "withdraw", "sign", "agree", "accept", "place order", "book",
 ]
-RISK_APPROVAL_LEVELS = {"high", "critical"}
 logger = logging.getLogger("browser_agent.agent")
 
 # Factory function to obtain the configured Chat LLM
@@ -112,7 +110,7 @@ def get_llm():
 
 # Coordinator that sits between the WebSocket endpoint and the LangChain tools execution thread
 class SessionCoordinator:
-    def __init__(self, websocket):
+    def __init__(self, websocket, approval_mode: ApprovalMode = "full_access"):
         self.websocket = websocket
         self.current_dom: List[Dict[str, Any]] = []
         self.response_queue = asyncio.Queue()
@@ -128,6 +126,7 @@ class SessionCoordinator:
         self.current_plan = ""
         self.pending_capabilities: dict[str, str] = {}
         self.action_timestamps: list[float] = []
+        self.approval_mode: ApprovalMode = approval_mode
 
     def record_turn(self, user_prompt: str, outcome: str) -> None:
         """Remembers a short summary of a completed task so follow-up prompts in the
@@ -319,12 +318,10 @@ class SessionCoordinator:
             return bool(response.get("approved"))
 
     def get_approval_reason(self, action: str, selector: str = None, value: str = None) -> str:
-        if not REQUIRE_ACTION_APPROVAL:
+        if self.approval_mode == "full_access":
             return ""
 
         risk = self.classify_action_risk(action, selector, value)
-        if risk["risk_level"] not in RISK_APPROVAL_LEVELS:
-            return ""
         return f"{risk['risk_level'].upper()} risk browser action requires approval: {risk['target_summary']}"
 
     def classify_action_risk(self, action: str, selector: str = None, value: str = None) -> Dict[str, str]:

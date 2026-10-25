@@ -4,6 +4,7 @@ let socket = null;
 let isAgentRunning = false;
 let backendUrl = "http://127.0.0.1:8000";
 let authToken = "";
+let approvalMode = "full_access";
 
 // DOM Elements
 const wsStatus = document.getElementById('ws-status');
@@ -22,6 +23,7 @@ const btnSettings = document.getElementById('btn-settings');
 const settingsPanel = document.getElementById('settings-panel');
 const backendUrlInput = document.getElementById('backend-url-input');
 const authTokenInput = document.getElementById('auth-token-input');
+const approvalModeInput = document.getElementById('approval-mode-input');
 const btnSaveSettings = document.getElementById('btn-save-settings');
 const btnHistory = document.getElementById('btn-history');
 const btnRuns = document.getElementById('btn-runs');
@@ -51,7 +53,7 @@ function connectWS() {
     wsStatus.className = "connected";
     document.getElementById('status-dot').className = "status-indicator connected";
     console.log("WebSocket connection established");
-    socket.send(JSON.stringify({ type: "auth", token: authToken }));
+    socket.send(JSON.stringify({ type: "auth", token: authToken, approval_mode: approvalMode }));
   };
   
   socket.onclose = () => {
@@ -135,12 +137,14 @@ function storageSet(values, area = "local") {
 }
 
 async function loadSettings() {
-  const saved = await storageGet({ backendUrl: backendUrl }, "local");
+  const saved = await storageGet({ backendUrl: backendUrl, approvalMode }, "local");
   const session = await storageGet({ authToken: "" }, "session");
   backendUrl = normalizeBackendUrl(saved.backendUrl || backendUrl);
   authToken = session.authToken || "";
+  approvalMode = saved.approvalMode === "ask_every_time" ? "ask_every_time" : "full_access";
   backendUrlInput.value = backendUrl;
   authTokenInput.value = authToken;
+  approvalModeInput.value = approvalMode;
 }
 
 function normalizeBackendUrl(url) {
@@ -155,8 +159,9 @@ function normalizeBackendUrl(url) {
 async function saveSettings() {
   backendUrl = normalizeBackendUrl(backendUrlInput.value);
   authToken = authTokenInput.value.trim();
+  approvalMode = approvalModeInput.value === "ask_every_time" ? "ask_every_time" : "full_access";
   backendUrlInput.value = backendUrl;
-  await storageSet({ backendUrl }, "local");
+  await storageSet({ backendUrl, approvalMode }, "local");
   await storageSet({ authToken }, "session");
   updateLog("Settings saved. Reconnecting...");
   if (socket && socket.readyState !== WebSocket.CLOSED) {

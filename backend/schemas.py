@@ -26,6 +26,14 @@ BrowserAction = Literal[
     "drag_drop",
 ]
 
+ApprovalMode = Literal["full_access", "ask_every_time"]
+
+
+class AuthEvent(BaseModel):
+    type: Literal["auth"]
+    token: str = ""
+    approval_mode: ApprovalMode = "full_access"
+
 
 class InteractiveDomElement(BaseModel):
     id: int | None = None
