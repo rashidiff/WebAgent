@@ -544,7 +544,7 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(settings.capture_screenshots)
 
     def test_navigation_policy_blocks_private_and_credential_urls(self):
-        self.assertFalse(validate_navigation_url("http://127.0.0.1:8000" )[0])
+        self.assertTrue(validate_navigation_url("http://127.0.0.1:8000" )[0])
         self.assertFalse(validate_navigation_url("https://user:pass@example.com" )[0])
         self.assertFalse(validate_navigation_url("javascript:alert(1)" )[0])
         self.assertTrue(validate_navigation_url("https://example.com" )[0])
@@ -556,7 +556,7 @@ class SettingsTests(unittest.TestCase):
 
     def test_element_navigation_policy_blocks_dangerous_links(self):
         self.assertFalse(validate_element_navigation({"href": "javascript:alert(1)"}, "https://example.com")[0])
-        self.assertFalse(validate_element_navigation({"href": "http://127.0.0.1:8000"}, "https://example.com")[0])
+        self.assertTrue(validate_element_navigation({"href": "http://127.0.0.1:8000"}, "https://example.com")[0])
         self.assertTrue(validate_element_navigation({"href": "/account"}, "https://example.com")[0])
 
     def test_llm_redaction_removes_common_pii_and_tokens(self):

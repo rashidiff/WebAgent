@@ -58,6 +58,19 @@ browser-agent/
 
 ## 🛠️ Installation & Setup
 
+### One-command Windows setup
+
+After cloning the repository, run this single command from PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\setup.ps1
+```
+
+The setup command creates the virtual environment, installs the pinned backend dependencies, creates `.env` when needed, opens `.env` in Notepad for the provider/model/API key, starts the FastAPI backend, and opens Chrome's extension page. In Chrome, choose **Load unpacked** and select the repository's `extension` folder. Use `.\setup.ps1 -SkipBrowser` when Chrome should not be opened automatically.
+
+The setup flow has three steps: clone the repository, run `setup.ps1`, then load the `extension` folder in Chrome and finish the `.env` values in Notepad.
+
 ### 1. Run the FastAPI Backend
 
 1. **Clone the repository and open its root folder**:
@@ -114,6 +127,8 @@ browser-agent/
 3. Click **Load unpacked** in the top-left corner.
 4. Select the `extension` folder from this repository.
 5. Pin the **Web Browser AI Agent** extension to your toolbar.
+
+For local HTML files opened with a `file://` URL, open the extension's **Details** page and enable **Allow access to file URLs**. Chrome requires this user-controlled switch even when the extension manifest declares `file:///*` host permission.
 
 The extension requests access to regular `http` and `https` websites when it is installed, so no per-site permission prompt is needed. Chrome still protects internal pages such as `chrome://` and the Chrome Web Store. In **Full access** mode (the default), actions run immediately; choose **Ask every time** in the sidepanel Settings to review every action. Each browser response remains bound to a short-lived per-action capability token.
 The current extension defaults wait about `900ms` after tab-level navigation and `700ms` after DOM actions before re-reading the page state.

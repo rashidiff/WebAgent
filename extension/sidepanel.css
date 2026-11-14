@@ -19,6 +19,22 @@
   --assistant-bubble-bg: transparent;
 }
 
+body.light-theme {
+  --bg-color: #f7f8fb;
+  --bg-gradient: linear-gradient(180deg, #ffffff 0%, #f2f4f8 100%);
+  --panel-bg: #ffffff;
+  --panel-border: rgba(20, 30, 50, 0.12);
+  --text-primary: #1d2430;
+  --text-secondary: #687386;
+  --accent-color: #315fbd;
+  --accent-hover: #244d9f;
+  --accent-glow: rgba(49, 95, 189, 0.12);
+  --danger-color: #b42318;
+  --danger-bg: rgba(180, 35, 24, 0.1);
+  --user-bubble-bg: #e9eef9;
+  --assistant-bubble-bg: transparent;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -34,6 +50,10 @@ body {
   flex-direction: column;
   overflow: hidden;
 }
+
+.theme-icon-moon { display: none; }
+body.light-theme .theme-icon-sun { display: none; }
+body.light-theme .theme-icon-moon { display: block; }
 
 /* Header - Ultra Minimal */
 header {
@@ -114,7 +134,7 @@ header {
 .settings-panel {
   margin: 0 20px 10px 20px;
   padding: 12px;
-  background: #1e1e20;
+  background: var(--panel-bg);
   border: 1px solid var(--panel-border);
   border-radius: 8px;
 }
@@ -140,7 +160,7 @@ header {
 
 .settings-row input,
 .settings-panel select {
-  background: #131314;
+  background: var(--bg-color);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   color: var(--text-primary);
@@ -155,7 +175,7 @@ header {
 }
 
 .settings-token-input {
-  background: #131314;
+  background: var(--bg-color);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   color: var(--text-primary);
@@ -167,7 +187,7 @@ header {
 
 .settings-row button,
 .history-action {
-  background: #232325;
+  background: var(--panel-bg);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   color: var(--text-primary);

@@ -20,6 +20,7 @@ const btnApprove = document.getElementById('btn-approve');
 const btnReject = document.getElementById('btn-reject');
 const timeline = document.getElementById('timeline');
 const btnSettings = document.getElementById('btn-settings');
+const btnTheme = document.getElementById('btn-theme');
 const settingsPanel = document.getElementById('settings-panel');
 const backendUrlInput = document.getElementById('backend-url-input');
 const authTokenInput = document.getElementById('auth-token-input');
@@ -137,7 +138,7 @@ function storageSet(values, area = "local") {
 }
 
 async function loadSettings() {
-  const saved = await storageGet({ backendUrl: backendUrl, approvalMode }, "local");
+  const saved = await storageGet({ backendUrl: backendUrl, approvalMode, theme: "dark" }, "local");
   const session = await storageGet({ authToken: "" }, "session");
   backendUrl = normalizeBackendUrl(saved.backendUrl || backendUrl);
   authToken = session.authToken || "";
@@ -145,6 +146,20 @@ async function loadSettings() {
   backendUrlInput.value = backendUrl;
   authTokenInput.value = authToken;
   approvalModeInput.value = approvalMode;
+  applyTheme(saved.theme || "dark");
+}
+
+function applyTheme(theme) {
+  const isLight = theme === "light";
+  document.body.classList.toggle("light-theme", isLight);
+  btnTheme.title = isLight ? "Switch to dark theme" : "Switch to light theme";
+  btnTheme.setAttribute("aria-label", btnTheme.title);
+}
+
+async function toggleTheme() {
+  const nextTheme = document.body.classList.contains("light-theme") ? "dark" : "light";
+  applyTheme(nextTheme);
+  await storageSet({ theme: nextTheme }, "local");
 }
 
 function normalizeBackendUrl(url) {
@@ -853,6 +868,7 @@ btnReset.addEventListener('click', resetSession);
 btnSettings.addEventListener('click', () => {
   settingsPanel.classList.toggle("hidden");
 });
+btnTheme.addEventListener('click', toggleTheme);
 btnSaveSettings.addEventListener('click', saveSettings);
 btnHistory.addEventListener('click', loadSessionHistory);
 btnRuns.addEventListener('click', loadRunReplays);

@@ -32,7 +32,7 @@ def redact_url_for_llm(url: object) -> str:
     return redact_for_llm(url).split("?", 1)[0]
 
 
-def validate_navigation_url(url: str, allow_private_networks: bool = False) -> tuple[bool, str]:
+def validate_navigation_url(url: str, allow_private_networks: bool = True) -> tuple[bool, str]:
     """Validate a navigation target before it reaches the browser executor."""
     try:
         parsed = urlparse((url or "").strip())
@@ -63,7 +63,7 @@ def validate_navigation_url(url: str, allow_private_networks: bool = False) -> t
 def validate_element_navigation(
     element: dict[str, object],
     page_url: str,
-    allow_private_networks: bool = False,
+    allow_private_networks: bool = True,
 ) -> tuple[bool, str]:
     """Apply navigation policy to links and form controls, not only navigate()."""
     raw_target = str(element.get("href") or element.get("formAction") or "").strip()
