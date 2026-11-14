@@ -1,5 +1,7 @@
 # Web Browser AI Agent 🌐🤖
 
+![WebAgent demo](docs/media/webagent-demo.gif)
+
 A local, lightweight, and extremely fast Full-Stack Web Browser AI Agent built using a **Chrome Extension (Manifest V3)**, **FastAPI**, and **LangChain**.
 
 The agent operates directly on the user's active, logged-in browser session. Instead of running a headless browser via heavy frameworks like Selenium or Playwright, the agent communicates with the Chrome Extension over a local WebSocket connection, executing actions directly via the browser's own scripting API.
