@@ -1,52 +1,33 @@
-param(
-    [switch]$SkipBrowser
-)
+﻿param([switch]$SkipBrowser)
+$ErrorActionPreference = 'Stop'
+Set-Location $PSScriptRoot
 
-$ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location $Root
+function Invoke-Checked([string]$Program, [string[]]$Arguments) {
+    & $Program @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "Command failed ($LASTEXITCODE): $Program $($Arguments -join ' ')" }
+}
 
-function Require-Command([string]$Name, [string]$Hint) {
-    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "$Name was not found. $Hint"
+try {
+    if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        throw 'Install Python 3.11+ from https://www.python.org/downloads/windows/ and enable Add Python to PATH, then rerun this command.'
     }
+    Invoke-Checked python @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)')
+    $VenvPython = Join-Path $PSScriptRoot 'venv\Scripts\python.exe'
+    if (-not (Test-Path $VenvPython)) {
+        Invoke-Checked python @('-m', 'venv', 'venv')
+    }
+    Invoke-Checked $VenvPython @('-c', 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)')
+    $Fingerprint = & $VenvPython -c "import hashlib; from pathlib import Path; print(hashlib.sha256(Path('backend/requirements.txt').read_bytes() + Path('backend/constraints.txt').read_bytes()).hexdigest())"
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot read dependency files.' }
+    $Stamp = Join-Path $PSScriptRoot 'venv\.webagent-dependencies'
+    if (-not (Test-Path $Stamp) -or (Get-Content $Stamp -Raw).Trim() -ne $Fingerprint) {
+        Invoke-Checked $VenvPython @('-m', 'pip', 'install', '-r', 'backend/requirements.txt', '-c', 'backend/constraints.txt')
+        Set-Content -LiteralPath $Stamp -Value $Fingerprint
+    }
+    $LaunchArguments = @('-m', 'backend.launcher')
+    if ($SkipBrowser) { $LaunchArguments += '--skip-browser' }
+    Invoke-Checked $VenvPython $LaunchArguments
+} catch {
+    Write-Host "Setup failed: $_" -ForegroundColor Red
+    exit 1
 }
-
-Write-Host "[1/3] Checking prerequisites..." -ForegroundColor Cyan
-Require-Command "python" "Install Python 3.11+ and enable 'Add Python to PATH'."
-Require-Command "node" "Install Node.js 20+; it is used to validate the extension scripts."
-
-$pythonVersion = (& python --version 2>&1).ToString()
-if ($pythonVersion -notmatch "Python 3\.(1[1-9]|[2-9][0-9])") {
-    throw "Python 3.11 or newer is required. Found: $pythonVersion"
-}
-
-if (-not (Test-Path ".\venv\Scripts\python.exe")) {
-    Write-Host "Creating virtual environment..." -ForegroundColor DarkCyan
-    python -m venv venv
-}
-
-$VenvPython = Join-Path $Root "venv\Scripts\python.exe"
-Write-Host "Installing backend dependencies..." -ForegroundColor DarkCyan
-& $VenvPython -m pip install --upgrade pip
-& $VenvPython -m pip install -r backend\requirements.txt -c backend\constraints.txt
-
-if (-not (Test-Path ".\.env")) {
-    Copy-Item ".\.env.example" ".\.env"
-    Write-Host "Created .env from .env.example" -ForegroundColor DarkCyan
-}
-
-Write-Host "[2/3] Opening .env in Notepad..." -ForegroundColor Cyan
-Write-Host "Choose LLM_PROVIDER, set LLM_MODEL_NAME, and paste the matching API key." -ForegroundColor Yellow
-Start-Process notepad.exe -ArgumentList (Join-Path $Root ".env") -Wait
-
-Write-Host "[3/3] Starting backend and opening Chrome extension setup..." -ForegroundColor Cyan
-if (-not $SkipBrowser) {
-    Start-Process "chrome.exe" -ArgumentList "chrome://extensions/" -ErrorAction SilentlyContinue
-}
-
-Write-Host "Load unpacked -> select: $Root\extension" -ForegroundColor Yellow
-Write-Host "Backend: http://127.0.0.1:8000" -ForegroundColor Green
-Write-Host "Press Ctrl+C in this window to stop the backend." -ForegroundColor DarkGray
-
-& $VenvPython -m backend.main

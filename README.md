@@ -62,16 +62,19 @@ browser-agent/
 
 ### One-command Windows setup
 
-After cloning the repository, run this single command from PowerShell:
+Install **Python 3.11+** with **Add Python to PATH**, and Google Chrome. Clone this repository once and open PowerShell in its root folder. Run:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\setup.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-The setup command creates the virtual environment, installs the pinned backend dependencies, creates `.env` when needed, opens `.env` in Notepad for the provider/model/API key, starts the FastAPI backend, and opens Chrome's extension page. In Chrome, choose **Load unpacked** and select the repository's `extension` folder. Use `.\setup.ps1 -SkipBrowser` when Chrome should not be opened automatically.
+This process-only execution policy applies to the new PowerShell process; it does not change your saved policy. Organization-enforced policies may still apply.
 
-The setup flow has three steps: clone the repository, run `setup.ps1`, then load the `extension` folder in Chrome and finish the `.env` values in Notepad.
+The command creates/reuses `venv`, installs the pinned dependencies when the dependency files change, and creates `.env` only if missing. When configuration is missing or invalid, it opens `.env` in Notepad. Enter `LLM_PROVIDER`, `LLM_MODEL_NAME`, and the matching API key, save, then press Enter in the terminal. Validation checks required settings and placeholder keys locally; it does not verify credentials with the provider. Existing valid settings skip the editor on later runs.
+
+The backend starts only after configuration validation and reports readiness at its configured address. The frontend is the bundled Chrome extension: it has no package installation or separate frontend server and does not require Node.js to launch. Chrome opens to `chrome://extensions/`; on first use enable **Developer mode**, choose **Load unpacked**, and select the printed `extension` folder. Chrome requires these manual actions. On later runs reuse the installed extension; reload it after updating its files. Open its sidepanel to connect. For a custom host/port, update the backend URL in extension Settings.
+
+Use the same command on subsequent launches, without cloning again. Press **Ctrl+C** in the terminal to stop the backend. A failed installation or startup stops with an error; if the port is occupied, stop the existing server or change `PORT` in `.env`. If Python is missing, install it using the printed instructions and rerun. To suppress opening Chrome, append `-SkipBrowser`. The manual setup below remains available for other platforms.
 
 ### 1. Run the FastAPI Backend
 

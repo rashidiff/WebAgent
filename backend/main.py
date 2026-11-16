@@ -93,6 +93,12 @@ app = FastAPI(
 )
 
 
+@app.get("/health")
+async def health():
+    """Readiness after application startup; exposes no configuration or history."""
+    return {"status": "ok", "service": "webagent"}
+
+
 # CORS is only relevant to the plain HTTP endpoints (GET /sessions*); the extension talks to
 # this server exclusively over WebSocket, which CORS does not gate. Default to allowing no
 # cross-origin browser access at all, since /sessions exposes locally logged chat/action
