@@ -202,6 +202,7 @@ class SessionCoordinator:
             capability_token=capability_token,
             capture_screenshots=settings.capture_screenshots,
             action_timeout_ms=max(1, int(DEFAULT_ACTION_TIMEOUT_SECONDS * 1000)),
+            max_result_bytes=settings.max_websocket_message_bytes,
             selector=selector,
             value=value,
             expected_fingerprint=expected_fingerprint,
@@ -241,7 +242,7 @@ class SessionCoordinator:
                     dom_summary=self.summarize_dom(self.current_dom),
                     screenshot_before=response.get("screenshot_before"),
                     screenshot_after=response.get("screenshot_after"),
-                    metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"]},
+                    metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"], "screenshot_warning": response.get("screenshot_warning")},
                 )
                 result = f"Success: Action executed. Current webpage interactive elements:\n{self.format_dom_for_llm(self.current_dom)}"
                 if action == "get_text" and self.last_page_text:
@@ -260,7 +261,7 @@ class SessionCoordinator:
                     dom_summary=self.summarize_dom(self.current_dom),
                     screenshot_before=response.get("screenshot_before"),
                     screenshot_after=response.get("screenshot_after"),
-                    metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"]},
+                    metadata={"risk_level": risk["risk_level"], "target_summary": risk["target_summary"], "screenshot_warning": response.get("screenshot_warning")},
                 )
                 return f"Error: Action failed: {err}. Webpage interactive elements remain:\n{self.format_dom_for_llm(self.current_dom)}"
         except asyncio.TimeoutError:

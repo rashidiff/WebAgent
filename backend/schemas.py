@@ -83,6 +83,7 @@ class ActionResultEvent(BaseModel):
     page_text: PageTextPayload | None = None
     screenshot_before: str | None = Field(default=None, max_length=2_000_000)
     screenshot_after: str | None = Field(default=None, max_length=2_000_000)
+    screenshot_warning: str | None = Field(default=None, max_length=500)
     error: str | None = None
 
 
@@ -99,6 +100,7 @@ class AgentActionEvent(BaseModel):
     capability_token: str
     capture_screenshots: bool = False
     action_timeout_ms: int = Field(default=40_000, ge=1)
+    max_result_bytes: int = Field(default=512_000, ge=4096)
     selector: str | None = None
     value: str | None = None
     expected_fingerprint: str = ""
