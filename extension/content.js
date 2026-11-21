@@ -4,6 +4,11 @@ globalThis.__webAgentContentScriptLoaded = true;
 
 const DOM_ELEMENT_BUDGET = 150;
 const PAGE_SETTLE_DELAY_MS = 700;
+const PAGE_INSTANCE_ID = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, "0")).join("");
+
+function getPageState() {
+  return { document_id: PAGE_INSTANCE_ID, url: window.location.href, title: document.title };
+}
 
 function cleanText(text, maxLength = 160) {
   return (text || "").trim().replace(/\s+/g, " ").substring(0, maxLength);
@@ -365,7 +370,10 @@ function waitForText(value, timeoutMs = 40000) {
   });
 }
 
-function executePageAction(action, selector, value, expectedFingerprint, timeoutMs) {
+function executePageAction(action, selector, value, expectedFingerprint, timeoutMs, expectedPageState) {
+  if (expectedPageState && (expectedPageState.document_id !== PAGE_INSTANCE_ID || expectedPageState.url !== window.location.href)) {
+    throw new Error("Target page changed before execution; action cancelled.");
+  }
   if (action === "scroll") {
     if (value === "down") window.scrollBy({ top: window.innerHeight * 0.7, behavior: "smooth" });
     else if (value === "up") window.scrollBy({ top: -window.innerHeight * 0.7, behavior: "smooth" });
@@ -539,16 +547,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'cancel_wait') {
     for (const cancel of [...pendingTextWaits]) cancel();
     sendResponse({ status: 'success' });
+  } else if (request.type === 'get_page_state') {
+    sendResponse({ status: 'success', page_state: getPageState() });
   } else if (request.type === 'get_dom') {
     try {
       const dom = getInteractiveDOM();
-      sendResponse({ status: 'success', dom_tree: dom, page_text: getPageText() });
+      sendResponse({ status: 'success', dom_tree: dom, page_text: getPageText(), page_state: getPageState() });
     } catch (e) {
       sendResponse({ status: 'error', error: e.message });
     }
   } else if (request.type === 'get_page_text') {
     try {
-      sendResponse({ status: "success", page_text: getPageText(), dom_tree: getInteractiveDOM() });
+      sendResponse({ status: "success", page_text: getPageText(), dom_tree: getInteractiveDOM(), page_state: getPageState() });
     } catch (e) {
       sendResponse({ status: "error", error: e.message });
     }
@@ -556,12 +566,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const { action, selector, value, expected_fingerprint: expectedFingerprint } = request;
     (async () => {
     try {
-      await executePageAction(action, selector, value, expectedFingerprint, request.timeout_ms);
+      await executePageAction(action, selector, value, expectedFingerprint, request.timeout_ms, request.expected_page_state);
       
       setTimeout(() => {
         try {
           const dom = getInteractiveDOM();
-          sendResponse({ status: 'success', dom_tree: dom, page_text: action === "get_text" ? getPageText() : null });
+          sendResponse({ status: 'success', dom_tree: dom, page_text: action === "get_text" ? getPageText() : null, page_state: getPageState() });
         } catch (domErr) {
           sendResponse({ status: 'error', error: domErr.message });
         }

@@ -2,6 +2,9 @@
 
 let socket = null;
 let isAgentRunning = false;
+let runTarget = null;
+let cancelPendingApproval = null;
+const approvedPages = new Map();
 let backendUrl = "http://127.0.0.1:8000";
 let authToken = "";
 let approvalMode = "full_access";
@@ -34,6 +37,7 @@ const historyList = document.getElementById('history-list');
 const replayList = document.getElementById('replay-list');
 const workflowList = document.getElementById('workflow-list');
 const historySearchInput = document.getElementById('history-search-input');
+const targetTabLabel = document.getElementById('target-tab');
 
 const TAB_LEVEL_ACTIONS = new Set(["navigate", "back", "forward", "reload"]);
 const NAVIGATION_SETTLE_DELAY_MS = 900;
@@ -58,6 +62,7 @@ function connectWS() {
   };
   
   socket.onclose = () => {
+    stopSessionState();
     wsStatus.textContent = "Disconnected";
     wsStatus.className = "disconnected";
     document.getElementById('status-dot').className = "status-indicator disconnected";
@@ -83,10 +88,20 @@ function connectWS() {
           stopSessionState();
         }
       } else if (data.type === 'agent_action') {
+        try {
+          const tab = await getBoundTab(data);
+          approvedPages.set(data.action_id, await getTargetPageState(tab));
+        } catch (error) {
+          sendApprovalResponse(data, false);
+          terminateTarget(error.message);
+          return;
+        }
         updateLog(`Agent Action: ${data.action} on ${data.selector || 'page'}`);
         appendTimeline("action", `${data.action}${data.selector ? ` ${data.selector}` : ""}${data.value ? ` -> ${data.value}` : ""}`);
         const approved = await requestActionApproval(data);
+        if (!isAgentRunning) return;
         sendApprovalResponse(data, approved);
+        if (!approved) approvedPages.delete(data.action_id);
         updateLog(approved ? "Approval granted. Waiting for backend execution grant..." : "Action rejected by user.");
         return;
 
@@ -94,14 +109,25 @@ function connectWS() {
         updateLog(`Executing authorized action: ${data.action} on ${data.selector || 'page'}`);
         appendTimeline("action", `${data.action}${data.selector ? ` ${data.selector}` : ""}${data.value ? ` -> ${data.value}` : ""}`);
         
-        const tab = await getActiveTab();
-        if (!tab) {
-          sendResult(data, { status: "error", error: "No active browser tab found" });
+        let tab;
+        try {
+          tab = await getBoundTab(data);
+          const state = await getTargetPageState(tab);
+          const approved = approvedPages.get(data.action_id);
+          approvedPages.delete(data.action_id);
+          if (approved && (approved.document_id !== state.document_id || approved.url !== state.url || approved.revision !== state.revision)) {
+            throw new Error("Target page changed after approval. Start a new run to approve the current page.");
+          }
+          data.expected_page_state = state;
+        } catch (error) {
+          sendResult(data, { status: "error", error: error.message });
+          terminateTarget(error.message);
           return;
         }
         
         try {
           const response = await executeAgentAction(tab, data);
+          acceptTargetPage(response);
           
           if (response && response.status === 'success') {
             sendResult(data, response);
@@ -109,10 +135,17 @@ function connectWS() {
             sendResult(data, response || { status: "error", error: "Unknown error in page interaction" });
           }
         } catch (err) {
+          if (!isAgentRunning || TAB_LEVEL_ACTIONS.has(data.action) || !/Receiving end does not exist|Could not establish connection/.test(err.message)) {
+            sendResult(data, { status: "error", error: err.message });
+            terminateTarget(`Target tab is inaccessible: ${err.message}`);
+            return;
+          }
           console.warn("Direct messaging failed, trying to inject content script and retry...", err);
           try {
+            await getBoundTab(data);
             await injectContentScript(tab.id);
             const response = await executeAgentAction(tab, data);
+            acceptTargetPage(response);
             if (response && response.status === 'success') {
               sendResult(data, response);
             } else {
@@ -122,6 +155,7 @@ function connectWS() {
             sendResult(data, { status: "error", error: `Script injection failed: ${injectErr.message}`,
               screenshot_before: injectErr.screenshot_before || err.screenshot_before,
               screenshot_after: injectErr.screenshot_after || err.screenshot_after });
+            terminateTarget(`Target tab is inaccessible: ${injectErr.message}`);
           }
         }
       }
@@ -428,7 +462,7 @@ function authFetchOptions() {
 function requestActionApproval(data) {
   const risk = data.risk_level ? data.risk_level.toUpperCase() : "UNKNOWN";
   const target = data.target_summary || `${data.action}${data.selector ? `: ${data.selector}` : ""}`;
-  approvalText.textContent = `${risk}: ${data.approval_reason || "Sensitive action"} — ${target}`;
+  approvalText.textContent = `${risk}: ${data.approval_reason || "Sensitive action"} — ${target}\nTarget: ${runTarget.title} (${runTarget.page.url})`;
   approvalPanel.classList.remove("hidden");
   updateLog("Waiting for user approval...");
 
@@ -437,6 +471,7 @@ function requestActionApproval(data) {
       btnApprove.removeEventListener("click", onApprove);
       btnReject.removeEventListener("click", onReject);
       approvalPanel.classList.add("hidden");
+      cancelPendingApproval = null;
     };
     const onApprove = () => {
       cleanup();
@@ -448,12 +483,18 @@ function requestActionApproval(data) {
     };
     btnApprove.addEventListener("click", onApprove);
     btnReject.addEventListener("click", onReject);
+    cancelPendingApproval = onReject;
   });
 }
 
 async function executeAgentAction(tab, data) {
+  await getBoundTab(data);
+  const currentPage = await getTargetPageState(tab);
+  if (data.expected_page_state && (data.expected_page_state.document_id !== currentPage.document_id || data.expected_page_state.url !== currentPage.url || data.expected_page_state.revision !== currentPage.revision)) {
+    throw new Error("Target page changed before execution.");
+  }
   const captureScreenshots = data.capture_screenshots === true;
-  const screenshotBefore = captureScreenshots ? await captureVisibleScreenshot() : null;
+  const screenshotBefore = captureScreenshots ? await captureVisibleScreenshot(tab) : null;
   let response = null;
   try {
   if (TAB_LEVEL_ACTIONS.has(data.action)) {
@@ -471,11 +512,12 @@ async function executeAgentAction(tab, data) {
       selector: data.selector,
       value: data.value,
       timeout_ms: data.action_timeout_ms,
+      expected_page_state: data.expected_page_state,
       expected_fingerprint: data.expected_fingerprint || ""
     });
   }
 
-  const screenshotAfter = captureScreenshots ? await captureVisibleScreenshot() : null;
+  const screenshotAfter = captureScreenshots ? await captureVisibleScreenshot(tab) : null;
   return {
     ...(response || {}),
     screenshot_before: screenshotBefore,
@@ -488,13 +530,15 @@ async function executeAgentAction(tab, data) {
   }
 }
 
-function captureVisibleScreenshot() {
+async function captureVisibleScreenshot(tab) {
+  const visible = await new Promise(resolve => chrome.tabs.query({ active: true, windowId: tab.windowId }, resolve));
+  if (visible[0]?.id !== tab.id) return null;
   return new Promise((resolve) => {
     if (!chrome.tabs || typeof chrome.tabs.captureVisibleTab !== "function") {
       resolve(null);
       return;
     }
-    chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 55 }, (dataUrl) => {
+    chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 55 }, (dataUrl) => {
       if (chrome.runtime.lastError) {
         console.warn("Screenshot capture failed:", chrome.runtime.lastError.message);
         resolve(null);
@@ -628,6 +672,43 @@ async function getActiveTab() {
     chrome.tabs.query({ active: true, currentWindow: true }, resolve);
   });
   return tabs[0];
+}
+
+async function getBoundTab(data) {
+  if (!isAgentRunning || !runTarget) throw new Error("No bound target tab for this run.");
+  if (runTarget.runId && runTarget.runId !== data.run_id) throw new Error("Stale run packet rejected.");
+  runTarget.runId = data.run_id;
+  const target = runTarget;
+  const tab = await new Promise((resolve, reject) => chrome.tabs.get(target.id, tab => {
+    if (chrome.runtime.lastError || !tab) reject(new Error("Target tab was closed or is inaccessible."));
+    else resolve(tab);
+  }));
+  if (runTarget !== target || tab.windowId !== target.windowId) throw new Error("Target tab moved or run stopped. Start a new run.");
+  if (!/^https?:\/\//.test(tab.url || "")) throw new Error("Target tab is no longer an accessible web page.");
+  return tab;
+}
+
+async function getTargetPageState(tab) {
+  const target = runTarget;
+  if (!target || target.id !== tab.id) throw new Error("Target run was stopped.");
+  const revision = target.revision;
+  const response = await sendMessageToTab(tab.id, { type: "get_page_state" });
+  const page = response?.page_state;
+  if (runTarget !== target || target.revision !== revision || !page || page.document_id !== target.page?.document_id || page.url !== target.page?.url) {
+    throw new Error("Target page changed outside the agent run. Start a new run on the current page.");
+  }
+  return { ...page, revision };
+}
+
+function acceptTargetPage(response) {
+  if (runTarget && response?.page_state) runTarget.page = response.page_state;
+}
+
+function terminateTarget(message) {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "stop_agent" }));
+  appendMessage("assistant", `ERROR: ${message}`);
+  updateLog(message);
+  stopSessionState();
 }
 
 // Helper to send message to webpage
@@ -780,6 +861,7 @@ function appendMessage(sender, text) {
 
 // Start executing user request
 async function startSession() {
+  if (isAgentRunning) return;
   const prompt = promptInput.value.trim();
   if (!prompt) return;
   
@@ -805,6 +887,9 @@ async function startSession() {
     stopSessionState();
     return;
   }
+  runTarget = { id: tab.id, windowId: tab.windowId, title: tab.title || tab.url, revision: 0, page: null, runId: null };
+  targetTabLabel.textContent = `Target: ${runTarget.title} · window ${tab.windowId}, tab ${tab.id}`;
+  targetTabLabel.classList.remove("hidden");
   
   updateLog("Parsing DOM from active webpage...");
   
@@ -815,6 +900,7 @@ async function startSession() {
     if (response && response.status === 'success') {
       domTree = response.dom_tree;
       pageText = response.page_text || null;
+      acceptTargetPage(response);
     } else {
       throw new Error(response ? response.error : "Failed to obtain elements");
     }
@@ -826,6 +912,7 @@ async function startSession() {
       if (response && response.status === 'success') {
         domTree = response.dom_tree;
         pageText = response.page_text || null;
+        acceptTargetPage(response);
       } else {
         throw new Error(response ? response.error : "Failed after script injection");
       }
@@ -837,6 +924,10 @@ async function startSession() {
   }
   
   if (socket && socket.readyState === WebSocket.OPEN) {
+    if (!runTarget?.page) {
+      terminateTarget("Could not identify the target page. Reload the extension and page, then retry.");
+      return;
+    }
     socket.send(JSON.stringify({
       type: "user_input",
       prompt: prompt,
@@ -853,6 +944,12 @@ async function startSession() {
 
 // Reset UI/Session State to default
 function stopSessionState() {
+  cancelPendingApproval?.();
+  approvedPages.clear();
+  const target = runTarget;
+  runTarget = null;
+  if (target) sendMessageToTab(target.id, { type: "cancel_wait" }).catch(() => {});
+  targetTabLabel.classList.add("hidden");
   isAgentRunning = false;
   approvalPanel.classList.add("hidden");
   promptInput.disabled = false;
@@ -893,6 +990,12 @@ function resetSession() {
 }
 
 // Event Listeners
+chrome.tabs.onRemoved.addListener(tabId => {
+  if (runTarget?.id === tabId) terminateTarget("Target tab was closed. Run stopped.");
+});
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (runTarget?.id === tabId && (change.url || change.status === "loading")) runTarget.revision++;
+});
 btnSend.addEventListener('click', startSession);
 promptInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
