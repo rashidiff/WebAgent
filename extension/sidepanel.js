@@ -136,7 +136,8 @@ function connectWS() {
           }
         } catch (err) {
           if (!isAgentRunning || TAB_LEVEL_ACTIONS.has(data.action) || !/Receiving end does not exist|Could not establish connection/.test(err.message)) {
-            sendResult(data, { status: "error", error: err.message });
+            sendResult(data, { status: "error", error: err.message,
+              screenshot_before: err.screenshot_before, screenshot_after: err.screenshot_after });
             terminateTarget(`Target tab is inaccessible: ${err.message}`);
             return;
           }
@@ -489,14 +490,15 @@ function requestActionApproval(data) {
 
 async function executeAgentAction(tab, data) {
   await getBoundTab(data);
-  const currentPage = await getTargetPageState(tab);
-  if (data.expected_page_state && (data.expected_page_state.document_id !== currentPage.document_id || data.expected_page_state.url !== currentPage.url || data.expected_page_state.revision !== currentPage.revision)) {
-    throw new Error("Target page changed before execution.");
-  }
   const captureScreenshots = data.capture_screenshots === true;
   const screenshotBefore = captureScreenshots ? await captureVisibleScreenshot(tab) : null;
   let response = null;
   try {
+  await getBoundTab(data);
+  const currentPage = await getTargetPageState(tab);
+  if (data.expected_page_state && (data.expected_page_state.document_id !== currentPage.document_id || data.expected_page_state.url !== currentPage.url || data.expected_page_state.revision !== currentPage.revision)) {
+    throw new Error("Target page changed before execution.");
+  }
   if (TAB_LEVEL_ACTIONS.has(data.action)) {
     const navigationWait = waitForTabToSettle(tab.id);
     await executeTabAction(tab.id, data.action, data.value);
@@ -525,7 +527,7 @@ async function executeAgentAction(tab, data) {
   };
   } catch (error) {
     error.screenshot_before = screenshotBefore;
-    error.screenshot_after = captureScreenshots ? await captureVisibleScreenshot() : null;
+    error.screenshot_after = captureScreenshots ? await captureVisibleScreenshot(tab) : null;
     throw error;
   }
 }
