@@ -104,9 +104,9 @@ function connectWS() {
           const response = await executeAgentAction(tab, data);
           
           if (response && response.status === 'success') {
-            sendResult(data, { status: "success", dom_tree: response.dom_tree, page_text: response.page_text || null });
+            sendResult(data, response);
           } else {
-            sendResult(data, { status: "error", error: response ? response.error : "Unknown error in page interaction" });
+            sendResult(data, response || { status: "error", error: "Unknown error in page interaction" });
           }
         } catch (err) {
           console.warn("Direct messaging failed, trying to inject content script and retry...", err);
@@ -114,12 +114,14 @@ function connectWS() {
             await injectContentScript(tab.id);
             const response = await executeAgentAction(tab, data);
             if (response && response.status === 'success') {
-              sendResult(data, { status: "success", dom_tree: response.dom_tree, page_text: response.page_text || null });
+              sendResult(data, response);
             } else {
-              sendResult(data, { status: "error", error: response ? response.error : "Execution error after injection" });
+              sendResult(data, response || { status: "error", error: "Execution error after injection" });
             }
           } catch (injectErr) {
-            sendResult(data, { status: "error", error: `Script injection failed: ${injectErr.message}` });
+            sendResult(data, { status: "error", error: `Script injection failed: ${injectErr.message}`,
+              screenshot_before: injectErr.screenshot_before || err.screenshot_before,
+              screenshot_after: injectErr.screenshot_after || err.screenshot_after });
           }
         }
       }
@@ -453,7 +455,7 @@ async function executeAgentAction(tab, data) {
   const captureScreenshots = data.capture_screenshots === true;
   const screenshotBefore = captureScreenshots ? await captureVisibleScreenshot() : null;
   let response = null;
-
+  try {
   if (TAB_LEVEL_ACTIONS.has(data.action)) {
     const navigationWait = waitForTabToSettle(tab.id);
     await executeTabAction(tab.id, data.action, data.value);
@@ -479,6 +481,11 @@ async function executeAgentAction(tab, data) {
     screenshot_before: screenshotBefore,
     screenshot_after: screenshotAfter
   };
+  } catch (error) {
+    error.screenshot_before = screenshotBefore;
+    error.screenshot_after = captureScreenshots ? await captureVisibleScreenshot() : null;
+    throw error;
+  }
 }
 
 function captureVisibleScreenshot() {
@@ -563,15 +570,44 @@ function delay(ms) {
 // Send execution results back to backend WebSocket
 function sendResult(actionContext, payload) {
   if (socket && socket.readyState === WebSocket.OPEN) {
+    const serialized = serializeActionResult(actionContext, payload);
     appendTimeline(payload.status === "success" ? "result" : "error", payload.error || "Action completed");
-    socket.send(JSON.stringify({
+    socket.send(serialized);
+  }
+}
+
+function serializeActionResult(actionContext, payload) {
+    const result = {
       type: "action_result",
       run_id: actionContext.run_id,
       action_id: actionContext.action_id,
       capability_token: actionContext.capability_token,
-      ...payload
-    }));
-  }
+      status: payload.status,
+      error: payload.error,
+      dom_tree: payload.dom_tree,
+      page_text: payload.page_text || null
+    };
+    for (const field of ["screenshot_before", "screenshot_after"]) {
+      const value = payload[field];
+      if (actionContext.capture_screenshots === true && typeof value === "string") {
+        if (value.length <= 2_000_000 && /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(value)) result[field] = value;
+        else result.screenshot_warning = "Screenshots omitted: invalid image or schema size limit exceeded.";
+      }
+    }
+    const limit = Math.max(4096, Math.min(actionContext.max_result_bytes || 512000, 10000000));
+    const bytes = () => new TextEncoder().encode(JSON.stringify(result)).length;
+    if (bytes() > limit) {
+      delete result.screenshot_before;
+      delete result.screenshot_after;
+      result.screenshot_warning = "Screenshots omitted: total WebSocket payload exceeds configured size limit.";
+    }
+    if (bytes() > limit) {
+      delete result.dom_tree;
+      delete result.page_text;
+      result.status = "error";
+      result.error = "Action result exceeds configured WebSocket payload limit.";
+    }
+    return JSON.stringify(result);
 }
 
 function sendApprovalResponse(actionContext, approved) {
