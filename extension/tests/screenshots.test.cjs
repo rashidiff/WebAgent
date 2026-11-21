@@ -9,7 +9,9 @@ function panel({ retry = false, failure = false } = {}) {
   let captures = 0;
   let injections = 0;
   let attempts = 0;
-  const node = { addEventListener() {}, classList: { add() {}, remove() {} }, appendChild() {}, focus() {} };
+  const node = { value: '', addEventListener() {}, classList: { add() {}, remove() {} }, appendChild() {}, focus() {} };
+  const tab = { id: 1, windowId: 2, url: 'https://example.test/', title: 'Test' };
+  const page_state = { document_id: 'synthetic-document', url: tab.url };
   class Socket {
     static OPEN = 1;
     readyState = 1;
@@ -18,15 +20,20 @@ function panel({ retry = false, failure = false } = {}) {
   const chrome = {
     runtime: { lastError: null },
     tabs: {
-      query: (query, cb) => cb([{ id: 1, windowId: 2 }]),
+      query: (query, cb) => cb([tab]),
+      get: (id, cb) => cb(tab),
       captureVisibleTab: (id, options, cb) => { captures++; cb(image); },
       sendMessage(id, data, cb) {
+        if (!['execute_action', 'get_page_text'].includes(data.type)) {
+          cb({ status: 'success', dom_tree: [], page_state });
+          return;
+        }
         attempts++;
         if (retry && attempts === 1) {
           chrome.runtime.lastError = { message: 'Receiving end does not exist' };
           cb();
           chrome.runtime.lastError = null;
-        } else cb(failure ? { status: 'error', error: 'synthetic failure' } : { status: 'success', dom_tree: [] });
+        } else cb(failure ? { status: 'error', error: 'synthetic failure' } : { status: 'success', dom_tree: [], page_state });
       },
     },
     scripting: { executeScript(options, cb) { injections++; cb(); } },
@@ -35,9 +42,10 @@ function panel({ retry = false, failure = false } = {}) {
     document: { getElementById: () => node, createElement: () => node } });
   const source = fs.readFileSync(require.resolve('../sidepanel.js'), 'utf8').split('// Event Listeners')[0];
   vm.runInContext(source, context);
-  vm.runInContext('appendTimeline = () => {}; connectWS();', context);
+  vm.runInContext('appendTimeline = () => {}; appendMessage = () => {}; connectWS();', context);
   return { sent, context, get captures() { return captures; }, get injections() { return injections; },
     async execute(capture = true) {
+      await vm.runInContext('promptInput.value = "synthetic task"; startSession()', context);
       await vm.runInContext(`socket.onmessage({data: JSON.stringify({type:'agent_execute', action:'click', run_id:'r', action_id:'a', capability_token:'c', capture_screenshots:${capture}})})`, context);
       return sent.at(-1);
     },

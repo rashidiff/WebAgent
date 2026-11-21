@@ -9,6 +9,7 @@ function page(text = 'Loading') {
   let reads = 0;
   const body = { get innerText() { reads++; return text; } };
   const context = vm.createContext({
+    crypto: require('node:crypto').webcrypto,
     console: { log() {} }, setTimeout, clearTimeout, Date,
     document: { body, title: 'Test', querySelectorAll: () => [] },
     window: {
