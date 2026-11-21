@@ -468,6 +468,7 @@ async function executeAgentAction(tab, data) {
       action: data.action,
       selector: data.selector,
       value: data.value,
+      timeout_ms: data.action_timeout_ms,
       expected_fingerprint: data.expected_fingerprint || ""
     });
   }

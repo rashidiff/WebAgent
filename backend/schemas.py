@@ -98,6 +98,7 @@ class AgentActionEvent(BaseModel):
     action_id: str
     capability_token: str
     capture_screenshots: bool = False
+    action_timeout_ms: int = Field(default=40_000, ge=1)
     selector: str | None = None
     value: str | None = None
     expected_fingerprint: str = ""
