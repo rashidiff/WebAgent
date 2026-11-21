@@ -502,12 +502,13 @@ def get_session_history(session_id: str) -> Dict[str, Any]:
 
 
 def delete_session(session_id: str) -> bool:
-    """Deletes one recorded session and its child records."""
+    """Delete history and linked replays; retain workflows with no source run."""
     conn = _get_connection()
     try:
         existing = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
         if not existing:
             return False
+        conn.execute("DELETE FROM runs WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM actions WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
@@ -518,11 +519,12 @@ def delete_session(session_id: str) -> bool:
 
 
 def clear_sessions() -> int:
-    """Deletes all recorded sessions and returns the number removed."""
+    """Delete session-linked history/replays, retaining standalone runs and workflows."""
     conn = _get_connection()
     try:
         row = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()
         deleted = int(row[0] if row else 0)
+        conn.execute("DELETE FROM runs WHERE session_id IS NOT NULL")
         conn.execute("DELETE FROM actions")
         conn.execute("DELETE FROM messages")
         conn.execute("DELETE FROM sessions")
