@@ -779,6 +779,13 @@ async def run_browser_agent(coordinator: SessionCoordinator, user_prompt: str, i
                         limit_msg = f"ERROR: Reached maximum execution limit of {max_steps} steps without completion."
                         await coordinator.history.log_message("assistant", limit_msg)
                         coordinator.record_turn(user_prompt, limit_msg)
+                        await coordinator.log_run_step(
+                            "ERROR", "Action budget exhausted", limit_msg,
+                            metadata={"reason": "budget_exhausted", "max_steps": max_steps, "executed_steps": executed_steps},
+                        )
+                        await asyncio.to_thread(
+                            update_run_status, coordinator.current_run_id, "error", coordinator.current_plan,
+                        )
                         await coordinator.send_status(limit_msg)
                         return
 
