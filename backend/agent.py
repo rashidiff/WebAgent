@@ -201,6 +201,7 @@ class SessionCoordinator:
             action_id=action_id,
             capability_token=capability_token,
             capture_screenshots=settings.capture_screenshots,
+            action_timeout_ms=max(1, int(DEFAULT_ACTION_TIMEOUT_SECONDS * 1000)),
             selector=selector,
             value=value,
             expected_fingerprint=expected_fingerprint,

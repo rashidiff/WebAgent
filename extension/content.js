@@ -324,7 +324,48 @@ function prepareElementForAction(element) {
   }
 }
 
-function executePageAction(action, selector, value, expectedFingerprint) {
+const pendingTextWaits = new Set();
+
+function waitForText(value, timeoutMs = 40000) {
+  const expected = String(value || "").toLowerCase();
+  if (!expected) return Promise.reject(new Error("wait_for_text requires non-empty text"));
+  // Leave time for the result to travel back before the backend action deadline.
+  const budget = Math.max(1, Math.min(Number(timeoutMs) || 40000, 40000) - 1000);
+  return new Promise((resolve, reject) => {
+    let timer;
+    const deadline = Date.now() + budget;
+    const cleanup = () => {
+      clearTimeout(timer);
+      window.removeEventListener("pagehide", cancel);
+      pendingTextWaits.delete(cancel);
+    };
+    const cancel = () => {
+      cleanup();
+      reject(new Error("wait_for_text cancelled: page navigated or action stopped"));
+    };
+    const check = () => {
+      try {
+        if (getReadableText(document).toLowerCase().includes(expected)) {
+          cleanup();
+          resolve();
+        } else if (Date.now() >= deadline) {
+          cleanup();
+          reject(new Error(`wait_for_text timed out after ${budget} ms waiting for: ${value}`));
+        } else {
+          timer = setTimeout(check, Math.min(100, deadline - Date.now()));
+        }
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
+    };
+    pendingTextWaits.add(cancel);
+    window.addEventListener("pagehide", cancel, { once: true });
+    check();
+  });
+}
+
+function executePageAction(action, selector, value, expectedFingerprint, timeoutMs) {
   if (action === "scroll") {
     if (value === "down") window.scrollBy({ top: window.innerHeight * 0.7, behavior: "smooth" });
     else if (value === "up") window.scrollBy({ top: -window.innerHeight * 0.7, behavior: "smooth" });
@@ -368,12 +409,7 @@ function executePageAction(action, selector, value, expectedFingerprint) {
   }
 
   if (action === "wait_for_text") {
-    const pageText = getReadableText(document).toLowerCase();
-    const expected = String(value || "").toLowerCase();
-    if (!expected || !pageText.includes(expected)) {
-      throw new Error(`Text not found on page: ${value}`);
-    }
-    return;
+    return waitForText(value, timeoutMs);
   }
 
   if (action === "detect_modal") {
@@ -500,7 +536,10 @@ function executePageAction(action, selector, value, expectedFingerprint) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log("Content script received message:", request);
   
-  if (request.type === 'get_dom') {
+  if (request.type === 'cancel_wait') {
+    for (const cancel of [...pendingTextWaits]) cancel();
+    sendResponse({ status: 'success' });
+  } else if (request.type === 'get_dom') {
     try {
       const dom = getInteractiveDOM();
       sendResponse({ status: 'success', dom_tree: dom, page_text: getPageText() });
@@ -515,8 +554,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
   } else if (request.type === 'execute_action') {
     const { action, selector, value, expected_fingerprint: expectedFingerprint } = request;
+    (async () => {
     try {
-      executePageAction(action, selector, value, expectedFingerprint);
+      await executePageAction(action, selector, value, expectedFingerprint, request.timeout_ms);
       
       setTimeout(() => {
         try {
@@ -525,11 +565,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         } catch (domErr) {
           sendResponse({ status: 'error', error: domErr.message });
         }
-      }, PAGE_SETTLE_DELAY_MS);
+      }, action === "wait_for_text" ? 0 : PAGE_SETTLE_DELAY_MS);
       
     } catch (e) {
       sendResponse({ status: 'error', error: e.message });
     }
+    })();
   }
   return true; // Retain message channel open for asynchronous sendResponse
 });
